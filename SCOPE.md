@@ -139,7 +139,16 @@ Each step must be measurable on its own before the next begins.
     cannot hold one expert, or a VRAM budget below one token's working set —
     goal 9's zero-hit-rate case, which is why 131k context is refused on this
     host.*
-15. **Failure safety.** A prediction miss falls back to an exact load. Always.
+15. **Failure safety.** A prediction miss falls back to an exact load.
+    Always. — *done, and stated in one place rather than left distributed
+    across the modules that happen to honour it. `exact_load` consults
+    nothing; `guard` turns every way a speculative loader can be wrong —
+    absent, raising, too few bytes, too many — into an exact load, counting
+    each reason apart. A failure of the exact path itself is fatal, because
+    inventing a fallback below it would mean returning weights that are not
+    the model's. `audit` reports any module using a predictor without a
+    reachable exact path, which is how the invariant would actually be lost:
+    by omission when a new speculative path is added.*
 
 ## Rules the implementation is held to
 
