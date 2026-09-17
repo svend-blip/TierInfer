@@ -36,6 +36,11 @@ Each step must be measurable on its own before the next begins.
 3. **Reproducible baseline benchmark.** Automate the manual experiment:
    warm cache, cold cache, RAM-constrained, and later TierInfer-enabled, with
    throughput, NVMe bandwidth, read-size distribution, IOPS and residency.
+   — *done for the four conditions that exist before TierInfer; results and
+   method in `benchmarks/BASELINE.md`. The headline: 8 tokens touch ~3.2 GB of
+   experts and read all 56.5 GB, and a 32 GB ceiling costs 7.4x throughput
+   while reading 113.6 GB — twice the model. Read-size distribution is
+   reported as a mean only; a histogram needs blktrace, which needs root.*
 4. **Explicit NVMe→RAM expert streaming.** Read a named expert into a
    controlled buffer, asynchronously, independently of demand paging, and
    time it. — *built: `pread` on a plain fd (nothing mapped), worker threads,

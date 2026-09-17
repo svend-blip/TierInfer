@@ -426,6 +426,14 @@ def measure(condition: str, model: str | os.PathLike, argv: list[str], *,
     if execution.peak_memory_bytes and memory_max_bytes:
         if execution.peak_memory_bytes >= memory_max_bytes * 0.99:
             notes.append("peak reached the ceiling — the limit bound the run, as intended")
+    if execution.exit_code == -9 and memory_max_bytes is not None:
+        # A row of dashes reads as "produced no number". This produced no
+        # number for a reason worth naming.
+        notes.append(f"killed by the cgroup OOM killer at the {memory_max_bytes / 1024 ** 3:.0f} GB "
+                     "ceiling — the run could not complete inside this limit, so its "
+                     "throughput is not missing but impossible")
+    elif execution.exit_code not in (0, -1):
+        notes.append(f"exited {execution.exit_code}; figures below cover only what it did before that")
     return Measurement(condition=condition, model=model, device=device, execution=execution,
                        disk=d1 - d0, residency_before=before, residency_after=after, notes=notes)
 

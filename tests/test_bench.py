@@ -228,3 +228,20 @@ def test_a_child_is_given_no_stdin():
                      "import sys; print('closed' if not sys.stdin.read() else 'open')"])
     assert e.exit_code == 0
     assert "closed" in e.stdout
+
+
+@pytest.mark.skipif(not memory_controller_available(),
+                    reason="memory controller is not delegated to this user")
+def test_a_run_the_oom_killer_stopped_says_so(datafile):
+    """A row of dashes reads as 'produced no number'; this produced none for
+    a reason, and the reason is the result."""
+    m = measure("cold+tiny", datafile,
+                [sys.executable, "-c", "b = bytearray(2 * 1024 * 1024 * 1024); print(len(b))"],
+                memory_max_bytes=32 * MB, timeout=180)
+    assert m.execution.exit_code != 0
+    assert any("OOM killer" in n for n in m.notes), m.notes
+
+
+def test_a_nonzero_exit_is_flagged_rather_than_passed_over(datafile):
+    m = measure("warm", datafile, [sys.executable, "-c", "raise SystemExit(4)"])
+    assert any("exited 4" in n for n in m.notes), m.notes
