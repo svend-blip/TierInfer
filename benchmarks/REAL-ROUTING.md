@@ -191,14 +191,16 @@ experts a layer has not routed to for N tokens; `--release-unused` also drops
 the ones never routed to at all, which on a cold run is most of the file,
 since llama.cpp reads all 56.5 GB during load.
 
-| arm | wall | s/token | GB read | resident after |
-|-----|-----:|--------:|--------:|---------------:|
-| no assist | 44 s | 2.78 | 89.6 | 54 % |
-| free after 2 tokens | 45 s | 2.83 | 90.4 | 54 % |
-| free after 2, including never-used | 48 s | 3.01 | 90.7 | 54 % |
+| arm | wall | s/token | GB read | released | resident after |
+|-----|-----:|--------:|--------:|---------:|---------------:|
+| no assist | 44 s | 2.78 | 89.6 | — | 54 % |
+| free after 2 tokens | 45 s | 2.83 | 90.4 | 62.8 GB | 54 % |
+| free after 2, incl. never-used | 48 s | 3.01 | 90.7 | **616.9 GB** | 54 % |
+| fetch 2 and free 2, incl. never-used | 51 s | 3.17 | 88.9 | 616.9 GB + 97.8 advised | 54 % |
 
-Residency does not move. Throughput gets slightly worse, which is the cost of
-issuing the advice.
+**616.9 GB of `DONTNEED`, across 209 937 calls, and residency did not move by
+a percentage point.** Throughput gets steadily worse as more advice is issued,
+which is the cost of issuing it. Every call returned success.
 
 **Why, in isolation.** `posix_fadvise(DONTNEED)` drops clean page-cache pages
 — but not ones a live process holds mapped, because the mapping keeps a
