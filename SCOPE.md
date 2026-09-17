@@ -38,7 +38,13 @@ Each step must be measurable on its own before the next begins.
    throughput, NVMe bandwidth, read-size distribution, IOPS and residency.
 4. **Explicit NVMe→RAM expert streaming.** Read a named expert into a
    controlled buffer, asynchronously, independently of demand paging, and
-   time it.
+   time it. — *built: `pread` on a plain fd (nothing mapped), worker threads,
+   a pool of fixed slots that raises rather than growing, per-load queue and
+   read timing, and a synchronous `load_now` that consults nothing — the
+   fallback goal 15 requires. `benchmarks/streaming.py` compares it against
+   page faults and against serial preads, cold each time, and checks all
+   three return identical bytes. Not yet measured on the model: the baseline
+   holds the device.*
 5. **Bounded RAM expert cache.** Insertion, hit, miss, eviction, pinning,
    adaptive retention. — *done and measured: +1.5 to +13.1 points of hit rate
    over LRU (widest where the cache is smallest), and victim selection is a
