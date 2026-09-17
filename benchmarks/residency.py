@@ -97,7 +97,10 @@ def main() -> int:
         pt, at = baseline.throughput(plain.execution.stdout), baseline.throughput(pinned.execution.stdout)
         print(f"\nat {gb:.0f} GB:")
         if pt and at:
-            print(f"  throughput {pt:.2f} -> {at:.2f} t/s  ({at / pt:+.0%} of plain)")
+            # A ratio formatted as a percentage reads as a change: 1.12
+            # printed as "+112%" says "more than doubled" for a 12% gain.
+            print(f"  throughput {pt:.2f} -> {at:.2f} t/s  "
+                  f"({at / pt - 1:+.1%}, {at / pt:.2f}x)")
         else:
             print(f"  throughput: plain {pt}, pinned {at} — one of them produced none")
         print(f"  read       {plain.disk.gb_read:.1f} -> {pinned.disk.gb_read:.1f} GB")

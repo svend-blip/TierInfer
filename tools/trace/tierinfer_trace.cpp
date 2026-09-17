@@ -24,12 +24,20 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
+#include <map>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 namespace {
 
 const char * const TOPK_PREFIX = "ffn_moe_topk-";
+
+// One expert's slices of the file, loaded from tools/trace/expert_map.py.
+struct expert_ranges {
+    std::vector<std::pair<long long, long long>> slices;   // offset, bytes
+};
 
 struct trace_state {
     FILE * out        = nullptr;
@@ -37,7 +45,70 @@ struct trace_state {
     long   lines      = 0;
     long   tensors    = 0;   // how many topk tensors were offered to us
     bool   warned_type = false;
+
+    // -- assist mode (off unless an expert map is given) ---------------
+    int    model_fd   = -1;
+    int    horizon    = 0;   // how many layers ahead to advise
+    long   advised    = 0;   // fadvise calls issued
+    long long advised_bytes = 0;
+    std::map<std::pair<int,int>, expert_ranges> map;       // (layer, expert)
+    std::map<int, std::vector<int>> last_token;            // layer -> experts
+
+    bool assisting() const { return model_fd >= 0 && horizon > 0 && !map.empty(); }
+
+    // Ask the kernel to fetch what the next layers are likely to want.
+    //
+    // The guess is the plainest one the measurement supports: whatever those
+    // layers routed to for the previous token. Consecutive tokens share 38%
+    // of their experts on this model, so roughly three of every eight slabs
+    // this fetches will be used, and the rest cost bandwidth and nothing
+    // else. POSIX_FADV_WILLNEED queues readahead and returns, so the
+    // callback does not block the layer it was called from.
+    void advise_ahead(int layer) {
+        for (int d = 1; d <= horizon; d++) {
+            auto it = last_token.find(layer + d);
+            if (it == last_token.end()) continue;
+            for (int e : it->second) {
+                auto r = map.find({layer + d, e});
+                if (r == map.end()) continue;
+                for (const auto & sl : r->second.slices) {
+                    posix_fadvise(model_fd, (off_t) sl.first, (off_t) sl.second,
+                                  POSIX_FADV_WILLNEED);
+                    advised++;
+                    advised_bytes += sl.second;
+                }
+            }
+        }
+    }
 };
+
+// Reads the flat table expert_map.py writes. Returns false on anything it
+// cannot read, rather than assisting from a half-loaded map.
+bool load_expert_map(const char * path, trace_state & st) {
+    FILE * f = std::fopen(path, "r");
+    if (!f) {
+        std::fprintf(stderr, "tierinfer-trace: cannot read %s\n", path);
+        return false;
+    }
+    char line[512];
+    long n = 0;
+    while (std::fgets(line, sizeof line, f)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        int layer, expert;
+        long long off, bytes;
+        if (std::sscanf(line, "%d %d %lld %lld", &layer, &expert, &off, &bytes) != 4) {
+            std::fprintf(stderr, "tierinfer-trace: malformed expert map line: %s", line);
+            std::fclose(f);
+            return false;
+        }
+        st.map[{layer, expert}].slices.push_back({off, bytes});
+        n++;
+    }
+    std::fclose(f);
+    std::fprintf(stderr, "tierinfer-trace: expert map has %ld ranges over %zu experts\n",
+                 n, st.map.size());
+    return n > 0;
+}
 
 // Called twice per node: once to ask whether we want it, once with the data.
 bool on_eval(ggml_tensor * t, bool ask, void * user_data) {
@@ -82,14 +153,29 @@ bool on_eval(ggml_tensor * t, bool ask, void * user_data) {
     }
     std::fprintf(st->out, "]}\n");
     st->lines++;
+
+    if (st->assisting()) {
+        st->advise_ahead(layer);
+        // Remember this layer's routing for the next token's guess. The last
+        // token to pass through a layer is the one whose routing is kept,
+        // which for a prompt decode means the final prompt token.
+        auto & slot = st->last_token[layer];
+        slot.clear();
+        const int64_t last = n_tokens - 1;
+        for (int64_t j = 0; j < n_used; j++) {
+            slot.push_back(buf[(size_t) (last * n_used + j)]);
+        }
+    }
     return true;
 }
 
 void usage(const char * argv0) {
     std::fprintf(stderr,
         "usage: %s -m MODEL.gguf [-p PROMPT] [-n TOKENS] [-ngl N] [-t THREADS]\n"
-        "          [-c CTX] [-o TRACE.jsonl]\n\n"
-        "Writes one JSONL line per decode per MoE layer to -o (default stdout).\n",
+        "          [-c CTX] [-o TRACE.jsonl] [--expert-map FILE --horizon N]\n\n"
+        "Writes one JSONL line per decode per MoE layer to -o (default stdout).\n"
+        "With --expert-map and --horizon > 0 it also advises the page cache for\n"
+        "the next N layers, guessing from the previous token's routing.\n",
         argv0);
 }
 
@@ -97,8 +183,8 @@ void usage(const char * argv0) {
 
 int main(int argc, char ** argv) {
     std::string model_path, prompt = "Explain what a mixture-of-experts layer does.";
-    std::string out_path;
-    int n_predict = 16, n_gpu_layers = 0, n_threads = 8, n_ctx = 2048;
+    std::string out_path, map_path;
+    int n_predict = 16, n_gpu_layers = 0, n_threads = 8, n_ctx = 2048, horizon = 0;
 
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
@@ -116,6 +202,8 @@ int main(int argc, char ** argv) {
         else if (a == "-ngl") n_gpu_layers = std::atoi(next("-ngl"));
         else if (a == "-t")   n_threads  = std::atoi(next("-t"));
         else if (a == "-c")   n_ctx      = std::atoi(next("-c"));
+        else if (a == "--expert-map") map_path = next("--expert-map");
+        else if (a == "--horizon")    horizon  = std::atoi(next("--horizon"));
         else if (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
         else {
             std::fprintf(stderr, "tierinfer-trace: unknown argument %s\n", a.c_str());
@@ -130,6 +218,22 @@ int main(int argc, char ** argv) {
     if (!st.out) {
         std::fprintf(stderr, "tierinfer-trace: cannot write %s\n", out_path.c_str());
         return 1;
+    }
+
+    if (!map_path.empty()) {
+        if (horizon <= 0) {
+            std::fprintf(stderr, "tierinfer-trace: --expert-map without --horizon does "
+                                 "nothing; pass --horizon N to assist\n");
+            return 2;
+        }
+        if (!load_expert_map(map_path.c_str(), st)) return 1;
+        st.model_fd = open(model_path.c_str(), O_RDONLY);
+        if (st.model_fd < 0) {
+            std::fprintf(stderr, "tierinfer-trace: cannot open the model for advising\n");
+            return 1;
+        }
+        st.horizon = horizon;
+        std::fprintf(stderr, "tierinfer-trace: assisting %d layers ahead\n", horizon);
     }
 
     llama_backend_init();
@@ -199,6 +303,10 @@ int main(int argc, char ** argv) {
 
     std::fprintf(stderr, "tierinfer-trace: wrote %ld lines from %ld routing tensors\n",
                  st.lines, st.tensors);
+    if (st.assisting()) {
+        std::fprintf(stderr, "tierinfer-trace: advised %ld ranges, %.2f GB\n",
+                     st.advised, (double) st.advised_bytes / (1024.0 * 1024.0 * 1024.0));
+    }
     if (st.lines == 0) {
         std::fprintf(stderr, "tierinfer-trace: no routing was captured — either this "
                              "model has no MoE layers, or the tensor name changed\n");
@@ -207,6 +315,7 @@ int main(int argc, char ** argv) {
     llama_sampler_free(smpl);
     llama_free(ctx);
     llama_model_free(model);
+    if (st.model_fd >= 0) close(st.model_fd);
     if (st.out != stdout) std::fclose(st.out);
     return st.lines > 0 ? 0 : 3;
 }
