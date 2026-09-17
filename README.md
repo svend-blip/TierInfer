@@ -22,39 +22,74 @@ Measured on the reference model, GLM-4.5-Air-Derestricted IQ4_XS
 | Model on disk | **56.46 GB** |
 | Always resident — attention, norms, router, shared experts | **4.55 GB** |
 | Routed experts | 51.91 GB |
-| **Working set for one token** | **8.13 GB** |
+| Working set for one token, from the layout | 8.13 GB |
+| **Working set for one token, measured from real routing** | **7.73 GB** |
 
-8.13 GB of 56.46 GB is what a token actually needs. That is a quarter of a
-32 GB card. The whole project is the distance between those two numbers.
+7.73 GB of 56.46 GB is what a token actually needs — **13.7 %** — measured by
+capturing 800 tokens of routing out of the running model, not inferred from
+the file. That is a quarter of a 32 GB card. The whole project is the distance
+between those two numbers.
+
+And the distance is real: llama.cpp given a 32 GB ceiling on this model runs
+at **0.80 tokens/s instead of 5.90**, and reads **113.6 GB for a 56.5 GB
+file**, because it keeps whatever it has touched rather than what it is about
+to need.
 
 ## Status
 
-Early. What works today:
+Eight of the fifteen goals in `SCOPE.md` are done and measured. Everything
+below is a measurement on the reference model, not a plan.
 
-- **GGUF layout inspection.** The directory of a 56.5 GB file is read in
-  0.20 s without touching a weight, and every tensor's computed size checks
-  out: the last tensor ends at byte 60 630 797 344, which is exactly the file
-  size.
-- **Expert addressing.** `load expert 37 of layer 18` returns byte ranges
-  rather than a hope about page faults.
+| | |
+|---|---|
+| **GGUF layout and expert addressing** | `load expert 37 of layer 18` returns byte ranges, not a hope about page faults |
+| **Baseline benchmark** | `benchmarks/BASELINE.md` — warm, cold, and two ceilings, with NVMe counters and page-cache residency, none of it needing root |
+| **NVMe→RAM streaming** | `benchmarks/STREAMING.md` — 3.47× demand paging at eight workers |
+| **Bounded expert cache** | value policy, a revalidating heap, and an exact LRU front |
+| **Routing capture from llama.cpp** | `tools/trace` — no patch, through the public `cb_eval` hook |
+| **Expert prediction** | four predictors and a recall@k harness, scored on real routing |
+| **Async prefetch** | the one place a guess causes I/O, and a miss always falls back to an exact read |
 
-```console
-$ tierinfer inspect models/GLM-4.5-Air-Derestricted.IQ4_XS.gguf
-architecture     glm4moe (GGUF v3, 803 tensors)
-layers           47, of which 46 are MoE
-experts          128 per layer, 8 used per token, 8.94 MB each
+### What the measurements changed
 
-total               56.46 GB
-always resident      4.55 GB   attention, norms, router, shared experts
-routed experts      51.91 GB
-working set          8.13 GB   what one token actually needs
+Two results are worth the front page because they overturned what this
+project assumed about itself.
 
-$ tierinfer expert models/GLM-4.5-Air-Derestricted.IQ4_XS.gguf 18 37
-layer 18 expert 37: 8.94 MB in 3 ranges
-  blk.18.ffn_gate_exps.weight#expert37   offset    23722005536  +  3063808
-  blk.18.ffn_up_exps.weight#expert37     offset    24119333920  +  3063808
-  blk.18.ffn_down_exps.weight#expert37   offset    23310193696  +  3244032
-```
+**The cache module was wrong, and real routing said so.** It opened by
+asserting that least-recently-used was the wrong default for MoE. Against a
+synthetic Zipf trace that held by up to 13 points of hit rate; against 800
+tokens captured out of GLM-4.5-Air it did not. Configured as it now is, the
+policy *equals* LRU rather than beating it. Three defects had to be fixed
+before it even got that far, and every one was invisible against synthetic
+data. `benchmarks/REAL-ROUTING.md` has them.
+
+**Prediction was better than the synthetic trace suggested, by a factor of
+ten.** Context beats the frequency floor by 12–14 points on real routing, not
+one. The same synthetic generator understated one thing and overstated the
+other, for the same reason: it was written by the same hand as the code it
+was measuring.
+
+### The horizon, which decides the architecture
+
+How much of the file does a window of W consecutive tokens need?
+
+| window | of the file |
+|-------:|------------:|
+| 1 token | 13.7 % |
+| 2 | 18.7 % |
+| 8 | 37.6 % |
+| 32 | **64.9 %** |
+| 400 | 93.0 % |
+
+A 32-token window needs 36.65 GB, and the ceiling that collapsed throughput
+7.4× was 32 GB. That is the mechanism, not a coincidence.
+
+It also settles where the work belongs. The needed set doubles by the second
+token, so anything managing residency from *outside* the inference loop
+cannot act on the horizon the data actually has. Tested rather than assumed:
+a helper process holding the 4.55 GB floor warm bought 12.5 % for 34 GB of
+extra reads (`benchmarks/residency.py`). The decision has to be made between
+layers.
 
 ### One thing the layout decides for us
 
@@ -91,10 +126,14 @@ privileges, so no cache has to be dropped system-wide to get an honest number.
 
 ## What is not built yet
 
-Everything after indexing: the tier manager, the RAM and VRAM caches, the
-expert activity tracker, the predictor and prerouter, the async prefetch
-engine, the storage backend, the telemetry, and the llama.cpp, FreeToken and
-FlowRunner adapters. `SCOPE.md` carries the full plan and its order.
+VRAM residency inside a budget, the adaptive tier policy over the runtime
+signals, unified telemetry, automatic configuration from host and model, and
+the FreeToken and FlowRunner adapters. The llama.cpp side captures routing and
+can advise the page cache from inside the forward pass; what it does not yet
+do is manage residency well enough to hold 7.73 GB instead of 56.47.
+
+`SCOPE.md` carries the full plan, its order, and what each goal has measured
+so far.
 
 ## Why this is worth doing
 
