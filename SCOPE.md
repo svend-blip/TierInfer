@@ -57,7 +57,13 @@ Each step must be measurable on its own before the next begins.
 7. **Async prefetch.** Read-ahead overlapping compute; measure stalls
    eliminated, accuracy, lead time and wasted bandwidth.
 8. **Expert prediction and prerouter.** Ranked prediction of upcoming
-   experts, evaluated against actual routing.
+   experts, evaluated against actual routing. — *four predictors (frequency,
+   persistence, transition, adaptive blend) and a recall@k harness that never
+   shows a layer its own routing. Measured on a synthetic trace: context beats
+   the frequency floor by about 1 point, and the adaptive blend backs whichever
+   part is measurably winning. That result is about the code, not the model —
+   `evaluate` takes any iterable of routings, so a captured trace scores through
+   the same harness once goal 6 can produce one.*
 9. **VRAM working set.** Explicit GPU residency inside a budget that leaves
    room for KV cache, activations and workspace.
 10. **Adaptive tier policy.** One policy over the runtime signals, adapting

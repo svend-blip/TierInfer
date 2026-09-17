@@ -13,7 +13,7 @@ the model ended up resident, and — where a ceiling applies — how much memory
 the run actually took.
 
     python benchmarks/baseline.py MODEL.gguf [--limit 32] [--limit 16] \\
-        [--tokens 64] [--budget 3600] [--out report.json]
+        [--tokens 4] [--budget 1200] [--out report.json]
 
 The conditions run cheapest-to-truth first: warm establishes what the machine
 can do at all, so a cold or constrained number has something to be a fraction
@@ -28,6 +28,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+# This job runs for hours with its output redirected to a file, where Python
+# block-buffers stdout. An unflushed print is indistinguishable from a hang,
+# and the first version of this spent fifty minutes looking like one.
+sys.stdout.reconfigure(line_buffering=True)
 
 from tierinfer.bench import (  # noqa: E402
     BenchError, Measurement, drop_cache, measure, memory_controller_available,
@@ -84,7 +89,9 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("model", type=Path)
     ap.add_argument("--llama", type=Path, default=DEFAULT_LLAMA)
-    ap.add_argument("--tokens", type=int, default=64)
+    ap.add_argument("--tokens", type=int, default=4,
+                    help="generation tokens; keep it small — the storage path shows "
+                         "in load and first-token time, not in a long generation")
     ap.add_argument("--threads", type=int, default=16)
     ap.add_argument("--prompt", default="Explain what a mixture-of-experts layer does.")
     ap.add_argument("--limit", type=float, action="append", default=[],
