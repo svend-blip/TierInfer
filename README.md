@@ -69,6 +69,26 @@ worse than no range at all.
 Not every MoE build stores experts this way. The inspector reports what it
 finds rather than assuming a layout.
 
+### Reading an expert on purpose
+
+`tierinfer.storage` reads named byte ranges and times every one. Measured on
+the reference host (Samsung 990 PRO), the same 8.94 MB expert, median of five:
+
+| Mode | Time | Bandwidth | Operations |
+|---|---:|---:|---:|
+| Cold, one read per projection | 13.45 ms | 0.70 GB/s | 3 |
+| Cold, coalesced | 14.56 ms | 0.64 GB/s | 3 |
+| **Cold, 4 KB pages** | **54.23 ms** | 0.17 GB/s | **2 288** |
+| Warm, one read per projection | 1.95 ms | 4.81 GB/s | 3 |
+
+Asking for the same bytes 4 KB at a time costs **4× the time and 763× the
+operations**. That is the baseline experiment's pathology reproduced in
+isolation, and the reason the rest of the system exists.
+
+Reproduce it with `python benchmarks/read_paths.py <model.gguf>`. Cold modes
+evict their own ranges from the page cache first — `posix_fadvise` needs no
+privileges, so no cache has to be dropped system-wide to get an honest number.
+
 ## What is not built yet
 
 Everything after indexing: the tier manager, the RAM and VRAM caches, the
