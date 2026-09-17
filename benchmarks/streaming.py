@@ -116,7 +116,7 @@ def main() -> int:
     groups = []
     for layer in ix.moe_layers[:a.layers]:
         for e in range(a.experts):
-            groups.append(((layer, e), ix.expert(layer, e)))
+            groups.append(((layer, e), list(ix.expert(layer, e).ranges)))
     flat = [r for _, rs in groups for r in rs]
     slot = max(sum(r.nbytes for r in rs) for _, rs in groups)
     total_mb = sum(r.nbytes for r in flat) / MB
