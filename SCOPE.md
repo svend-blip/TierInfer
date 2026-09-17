@@ -106,7 +106,13 @@ Each step must be measurable on its own before the next begins.
 11. **FreeToken adapter.**
 12. **FlowRunner capability.** Declarative configuration, telemetry out.
 13. **Unified telemetry.** Runtime-independent schema, machine-readable.
-14. **Automatic configuration.** Derive budgets from host and model.
+    — *done. Two record kinds, events and snapshots, versioned, JSON Lines,
+    line-buffered so a reader arriving mid-run sees everything so far. Field
+    lists live in one place so adding a counter cannot silently widen the
+    schema, a missing counter is an error rather than a gap, and a file that
+    does not open with `run.open` is refused because its records cannot be
+    attributed. Nothing is derived on the way out — rates belong to the
+    reader, who can then check them.*
 15. **Failure safety.** A prediction miss falls back to an exact load. Always.
 
 ## Rules the implementation is held to
