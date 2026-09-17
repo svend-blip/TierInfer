@@ -95,7 +95,14 @@ Each step must be measurable on its own before the next begins.
    token's working set the hit rate is not low but zero, which is what
    131k context does.*
 10. **Adaptive tier policy.** One policy over the runtime signals, adapting
-    during inference.
+    during inference. — *done and measured (`benchmarks/POLICY.md`). One
+    policy locates every expert across three tiers whose costs are ten times
+    apart, retains on measured activation rather than on prediction, and moves
+    its one free parameter — prefetch depth — on measured stalls against
+    measured waste. Tiering is worth 17x (1 318 ms/token to 75); the dial on
+    top is worth 1%, and the adaptive arm reaches the best fixed depth without
+    being told which it is. A 3.8% miss rate costs two thirds of the time,
+    because the tiers are tenfold apart.*
 11. **FreeToken adapter.**
 12. **FlowRunner capability.** Declarative configuration, telemetry out.
 13. **Unified telemetry.** Runtime-independent schema, machine-readable.
