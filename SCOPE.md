@@ -113,6 +113,15 @@ Each step must be measurable on its own before the next begins.
     does not open with `run.open` is refused because its records cannot be
     attributed. Nothing is derived on the way out — rates belong to the
     reader, who can then check them.*
+14. **Automatic configuration.** Derive budgets from host and model. —
+    *done. VRAM from the driver, RAM from /proc/meminfo, the model's shape
+    from its GGUF, the tier constants from the benchmarks. Every choice is
+    reported as a decision, and a figure that cannot be measured here is
+    absent rather than defaulted. It refuses rather than returning numbers
+    that cannot work: a context whose KV cache will not fit, a host that
+    cannot hold one expert, or a VRAM budget below one token's working set —
+    goal 9's zero-hit-rate case, which is why 131k context is refused on this
+    host.*
 15. **Failure safety.** A prediction miss falls back to an exact load. Always.
 
 ## Rules the implementation is held to
