@@ -26,6 +26,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <map>
+#include <set>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -50,6 +51,7 @@ struct trace_state {
     int    model_fd   = -1;
     int    horizon    = 0;   // how many layers ahead to advise
     int    evict_after = 0;  // tokens of disuse before an expert is released
+    bool   release_unused = false;  // also release experts never routed to
     int    token      = 0;   // how many decodes have completed
     long   advised    = 0;   // fadvise WILLNEED calls issued
     long long advised_bytes = 0;
@@ -58,6 +60,7 @@ struct trace_state {
     std::map<std::pair<int,int>, expert_ranges> map;       // (layer, expert)
     std::map<int, std::vector<int>> last_token;            // layer -> experts
     std::map<std::pair<int,int>, int> last_used;           // (layer,expert) -> token
+    std::set<std::pair<int,int>> released_unused;          // released without ever being used
 
     bool assisting() const { return model_fd >= 0 && !map.empty()
                                     && (horizon > 0 || evict_after > 0); }
@@ -81,14 +84,15 @@ struct trace_state {
             if (m == map.end()) continue;
             auto u = last_used.find({layer, e});
             if (u != last_used.end() && token - u->second <= evict_after) continue;
-            if (u == last_used.end()) continue;   // never used: never fetched either
+            if (u == last_used.end() && !release_unused) continue;
             for (const auto & sl : m->second.slices) {
                 posix_fadvise(model_fd, (off_t) sl.first, (off_t) sl.second,
                               POSIX_FADV_DONTNEED);
                 released++;
                 released_bytes += sl.second;
             }
-            last_used.erase(u);
+            if (u != last_used.end()) last_used.erase(u);
+            else released_unused.insert({layer, e});
         }
     }
 
@@ -192,13 +196,17 @@ bool on_eval(ggml_tensor * t, bool ask, void * user_data) {
     st->lines++;
 
     if (st->assisting()) {
-        st->advise_ahead(layer);
-        st->release_cold(layer);
+        // Mark this layer's experts as used *before* releasing anything from
+        // it. The routing tensor is ready here, but the FFN that consumes
+        // those weights has not run yet, so releasing first would drop the
+        // very pages this layer is about to read.
         for (int64_t i = 0; i < n_tokens; i++) {
             for (int64_t j = 0; j < n_used; j++) {
                 st->last_used[{layer, buf[(size_t) (i * n_used + j)]}] = st->token;
             }
         }
+        st->advise_ahead(layer);
+        st->release_cold(layer);
         // Remember this layer's routing for the next token's guess. The last
         // token to pass through a layer is the one whose routing is kept,
         // which for a prompt decode means the final prompt token.
@@ -219,7 +227,8 @@ void usage(const char * argv0) {
         "          [--expert-map FILE [--horizon N] [--evict-after N]]\n\n"
         "Writes one JSONL line per decode per MoE layer to -o (default stdout).\n"
         "--horizon N   fetch what the next N layers used for the previous token\n"
-        "--evict-after N  release experts a layer has not routed to for N tokens\n",
+        "--evict-after N  release experts a layer has not routed to for N tokens\n"
+        "--release-unused  also release experts never routed to at all\n",
         argv0);
 }
 
@@ -230,6 +239,7 @@ int main(int argc, char ** argv) {
     std::string out_path, map_path;
     int n_predict = 16, n_gpu_layers = 0, n_threads = 8, n_ctx = 2048;
     int horizon = 0, evict_after = 0;
+    bool release_unused = false;
 
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
@@ -250,6 +260,7 @@ int main(int argc, char ** argv) {
         else if (a == "--expert-map") map_path = next("--expert-map");
         else if (a == "--horizon")    horizon  = std::atoi(next("--horizon"));
         else if (a == "--evict-after") evict_after = std::atoi(next("--evict-after"));
+        else if (a == "--release-unused") release_unused = true;
         else if (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
         else {
             std::fprintf(stderr, "tierinfer-trace: unknown argument %s\n", a.c_str());
@@ -280,8 +291,11 @@ int main(int argc, char ** argv) {
         }
         st.horizon = horizon;
         st.evict_after = evict_after;
+        st.release_unused = release_unused;
         std::fprintf(stderr, "tierinfer-trace: assisting — fetch %d layers ahead, "
-                             "release after %d tokens of disuse\n", horizon, evict_after);
+                             "release after %d tokens of disuse%s\n",
+                     horizon, evict_after,
+                     release_unused ? ", including experts never routed to" : "");
     }
 
     llama_backend_init();
@@ -357,6 +371,8 @@ int main(int argc, char ** argv) {
                              "released %ld ranges (%.2f GB)\n",
                      st.advised, (double) st.advised_bytes / (1024.0 * 1024.0 * 1024.0),
                      st.released, (double) st.released_bytes / (1024.0 * 1024.0 * 1024.0));
+        std::fprintf(stderr, "tierinfer-trace: %zu experts released without ever being "
+                             "routed to\n", st.released_unused.size());
     }
     if (st.lines == 0) {
         std::fprintf(stderr, "tierinfer-trace: no routing was captured — either this "

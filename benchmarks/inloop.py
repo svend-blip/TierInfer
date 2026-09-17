@@ -71,8 +71,11 @@ def main() -> int:
     a = ap.parse_args()
     arms: list[tuple[int, int]] = []
     for spec in (a.arm or ["2:0"]):
-        h, _, ev = spec.partition(":")
-        arms.append((int(h or 0), int(ev or 0)))
+        parts = spec.split(":")
+        h = int(parts[0] or 0)
+        ev = int(parts[1] or 0) if len(parts) > 1 else 0
+        unused = len(parts) > 2 and parts[2] in ("u", "unused", "1")
+        arms.append((h, ev, unused))
 
     if not TOOL.exists():
         print(f"no {TOOL}; run tools/trace/build.sh first", file=sys.stderr)
@@ -88,13 +91,16 @@ def main() -> int:
           f"{'IOPS':>10}{'mean rd':>10}{'resident':>11}")
 
     results, plain = [], None
-    for horizon, evict in [(0, 0)] + arms:
+    for horizon, evict, unused in [(0, 0, False)] + arms:
+        tag = f"{horizon}-{evict}{'u' if unused else ''}"
         label = "no assist" if (horizon, evict) == (0, 0) else \
-                f"fetch {horizon} / free {evict}"
+                f"fetch {horizon} / free {evict}{' +unused' if unused else ''}"
         argv = argv_for(a.model, a.tokens, a.threads,
-                        scratch / f"inloop-{horizon}-{evict}.jsonl",
+                        scratch / f"inloop-{tag}.jsonl",
                         a.expert_map if (horizon or evict) else None, horizon, evict)
-        m = measure(f"inloop-{horizon}-{evict}", a.model, argv, cold=True,
+        if unused:
+            argv.append("--release-unused")
+        m = measure(f"inloop-{tag}", a.model, argv, cold=True,
                     memory_max_bytes=int(a.limit * GB), timeout=a.budget)
         results.append(m)
         print(row(label, m, a.tokens), flush=True)
@@ -109,9 +115,9 @@ def main() -> int:
     for m in results:
         for note in m.notes:
             print(f"note [{m.condition}]: {note}")
-        advised = [l for l in m.execution.stdout.splitlines() if "advised" in l]
-        if advised:
-            print(f"[{m.condition}] {advised[-1].strip()}")
+        for line in m.execution.stdout.splitlines():
+            if "advised" in line or "never being routed" in line:
+                print(f"[{m.condition}] {line.strip()}")
     write_report(results, a.out)
     print(f"\nwrote {a.out}")
     return 0
