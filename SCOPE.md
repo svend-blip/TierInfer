@@ -85,7 +85,15 @@ Each step must be measurable on its own before the next begins.
    `evaluate` takes any iterable of routings, so a captured trace scores through
    the same harness once goal 6 can produce one.*
 9. **VRAM working set.** Explicit GPU residency inside a budget that leaves
-   room for KV cache, activations and workspace.
+   room for KV cache, activations and workspace. — *done and measured
+   (`benchmarks/VRAM.md`). The budget is derived from the model's metadata,
+   and its KV term is identical to llama.cpp's own allocation at three
+   contexts; the runtime overhead is measured rather than derived, because it
+   belongs to the runtime. On real routing a 32 GB card holds 22–25 GB of
+   experts at a 76–79% hit rate, and the misses cost about a fifth of a warm
+   token — against 7.4x for the same model under a RAM ceiling. Below one
+   token's working set the hit rate is not low but zero, which is what
+   131k context does.*
 10. **Adaptive tier policy.** One policy over the runtime signals, adapting
     during inference.
 11. **FreeToken adapter.**
