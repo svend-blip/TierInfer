@@ -160,3 +160,76 @@ assumptions became the measurement's conclusions.
 
 The generator was not useless — it caught real bugs and it is still the only
 way to test without a 56 GB model. But no claim about *the model* survives it.
+
+## Residency assist: measured, and it cannot work from outside
+
+The horizon says a residency decision has to be made on a one- to two-token
+window. `cb_eval` can act there — it fires once per MoE layer during the
+forward pass, so when layer L's routing is known, layers L+1 and L+2 have not
+run. That is the right place. The question is whether advising the page cache
+from there does anything.
+
+It does not, and the reason is mechanical rather than a matter of tuning.
+
+**Fetching.** `tools/trace --horizon N` advises the page cache for the next N
+layers, guessing from what they routed to for the previous token.
+
+| arm | wall | s/token | GB read | advised |
+|-----|-----:|--------:|--------:|--------:|
+| no assist | 44 s | 2.76 | 88.7 | — |
+| horizon 1 | 44 s | 2.75 | 89.6 | 49.5 GB |
+| horizon 3 | 43 s | 2.71 | 88.9 | 144.9 GB |
+
+144.9 GB of `WILLNEED` produced 0.3 GB of reads. The cgroup sat at its 32 GB
+ceiling throughout and the kernel will not evict anything to satisfy an
+advisory hint: under a full cache, `WILLNEED` is a no-op. Lead time was never
+the constraint — a layer takes 61 ms here and an expert reads in about 5 —
+there was simply nowhere to put it.
+
+**Freeing.** So something has to go first. `--evict-after N` releases the
+experts a layer has not routed to for N tokens; `--release-unused` also drops
+the ones never routed to at all, which on a cold run is most of the file,
+since llama.cpp reads all 56.5 GB during load.
+
+| arm | wall | s/token | GB read | resident after |
+|-----|-----:|--------:|--------:|---------------:|
+| no assist | 44 s | 2.78 | 89.6 | 54 % |
+| free after 2 tokens | 45 s | 2.83 | 90.4 | 54 % |
+| free after 2, including never-used | 48 s | 3.01 | 90.7 | 54 % |
+
+Residency does not move. Throughput gets slightly worse, which is the cost of
+issuing the advice.
+
+**Why, in isolation.** `posix_fadvise(DONTNEED)` drops clean page-cache pages
+— but not ones a live process holds mapped, because the mapping keeps a
+reference:
+
+| | resident |
+|---|---:|
+| freshly written, `fsync` then `DONTNEED` | 0.0 % |
+| after another process mmaps it and touches every page | 100.0 % |
+| **`DONTNEED` from a second fd while that process holds it** | **100.0 %** |
+| `DONTNEED` after that process exits | 0.0 % |
+
+The call succeeds. It simply does nothing. `tests/test_bench.py` carries this
+as a test, so a platform where it behaves differently fails loudly rather than
+quietly invalidating the conclusion below.
+
+### What that settles
+
+**Advisory page-cache management cannot manage a mmap'd model, in either
+direction.** `WILLNEED` has nowhere to read into when the ceiling is full;
+`DONTNEED` cannot release what the mapping is holding. Between them there is
+no way to shape residency from beside the runtime.
+
+It also explains the one thing that *did* help. The floor pinner bought
+12.5 % — and it worked by **reading**, not by advising. Reads move pages;
+advice does not.
+
+So TierInfer cannot assist llama.cpp's residency. It has to own the loading
+path — explicit `pread` into buffers it controls, with no mapping in the way.
+Which is what `tierinfer.storage` and `tierinfer.stream` already are, measured
+at 3.47× demand paging and 3.0 GB/s against llama.cpp's own 1.54.
+
+That is goal 6's real finding: the integration cannot be advisory, and the
+measurements say so three separate ways.

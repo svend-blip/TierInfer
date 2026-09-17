@@ -64,8 +64,12 @@ Each step must be measurable on its own before the next begins.
    `cb_eval` hook and links against the existing build, so the clean baseline
    is the default rather than a mode. Two 400-token traces from GLM-4.5-Air
    are in `traces/`, and `benchmarks/REAL-ROUTING.md` reports what they
-   overturn. Residency assist — TierInfer shaping the page cache under a live
-   run — is the remaining half of this goal.*
+   overturn. Residency assist is measured and settled: it cannot be
+   done advisorily. WILLNEED is a no-op under a full ceiling and DONTNEED
+   cannot evict pages a live mapping holds, shown end to end and in isolation.
+   The integration has to own the loading path rather than advise around it,
+   which makes `tierinfer.storage` the seam and a llama.cpp loader the
+   remaining work.*
 7. **Async prefetch.** Read-ahead overlapping compute; measure stalls
    eliminated, accuracy, lead time and wasted bandwidth. — *built: the one
    place a guess causes I/O, and the only place the safety rule has teeth —

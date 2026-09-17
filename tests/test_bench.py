@@ -245,3 +245,44 @@ def test_a_run_the_oom_killer_stopped_says_so(datafile):
 def test_a_nonzero_exit_is_flagged_rather_than_passed_over(datafile):
     m = measure("warm", datafile, [sys.executable, "-c", "raise SystemExit(4)"])
     assert any("exited 4" in n for n in m.notes), m.notes
+
+
+def test_dontneed_cannot_evict_pages_another_process_has_mapped(tmp_path):
+    """The mechanism that decides TierInfer's architecture.
+
+    posix_fadvise(DONTNEED) drops clean page-cache pages — but not ones a live
+    process holds mapped, because the mapping keeps a reference. So residency
+    of a model file cannot be managed from beside the runtime that mmapped it,
+    in either direction: WILLNEED has nowhere to read into under a full
+    cgroup, and DONTNEED cannot release what the mapping is holding.
+
+    Measured end to end this cost a 16-token run 4 seconds and changed
+    residency by nothing. Here it is in isolation, in under a minute.
+    """
+    p = tmp_path / "blob.bin"
+    p.write_bytes(os.urandom(64 * MB))
+    assert drop_cache(p).fraction < 0.1
+
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import mmap, os, sys, time\n"
+         f"fd = os.open({str(p)!r}, os.O_RDONLY)\n"
+         "mm = mmap.mmap(fd, 0, prot=mmap.PROT_READ)\n"
+         "n = 0\n"
+         "for off in range(0, mm.size(), mmap.PAGESIZE): n += mm[off]\n"
+         "print('touched', flush=True)\n"
+         "time.sleep(60)\n"],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "touched"
+        assert residency(p).fraction > 0.9, "the holder did not fault the file in"
+        # The advice is issued and returns success; it simply does nothing.
+        assert drop_cache(p).fraction > 0.9, \
+            "DONTNEED evicted mapped pages — this platform behaves differently " \
+            "and the architecture conclusion drawn from it needs revisiting"
+    finally:
+        holder.terminate()
+        holder.wait(timeout=10)
+
+    # With the mapping gone, the same call works.
+    assert drop_cache(p).fraction < 0.1
