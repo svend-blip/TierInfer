@@ -114,6 +114,14 @@ Each step must be measurable on its own before the next begins.
     namespace, with an unreported counter coming back absent rather than
     zero. Standard-library HTTP only.*
 12. **FlowRunner capability.** Declarative configuration, telemetry out.
+    — *done. A flow declares what the work needs — a model, a context, and
+    optionally the residency share below which the step should be refused
+    rather than run slowly and believed — and is deliberately unable to
+    declare a VRAM size, because that belongs to whatever machine the flow
+    lands on. `resolve` puts the declaration and the host together and
+    produces a configuration or a refusal naming what is missing. Unknown
+    fields are refused rather than ignored. Telemetry goes out in the shared
+    schema.*
 13. **Unified telemetry.** Runtime-independent schema, machine-readable.
     — *done. Two record kinds, events and snapshots, versioned, JSON Lines,
     line-buffered so a reader arriving mid-run sees everything so far. Field
