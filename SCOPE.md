@@ -55,7 +55,11 @@ Each step must be measurable on its own before the next begins.
    residency, benchmarkable against native mmap. A clean baseline mode must
    remain.
 7. **Async prefetch.** Read-ahead overlapping compute; measure stalls
-   eliminated, accuracy, lead time and wasted bandwidth.
+   eliminated, accuracy, lead time and wasted bandwidth. — *built: the one
+   place a guess causes I/O, and the only place the safety rule has teeth —
+   a routed expert nobody anticipated gets an exact synchronous read, and is
+   counted as a stall. All four numbers reported. Not yet measured end to
+   end: that needs goal 6.*
 8. **Expert prediction and prerouter.** Ranked prediction of upcoming
    experts, evaluated against actual routing. — *four predictors (frequency,
    persistence, transition, adaptive blend) and a recall@k harness that never
