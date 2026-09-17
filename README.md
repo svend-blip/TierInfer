@@ -37,8 +37,10 @@ to need.
 
 ## Status
 
-Eight of the fifteen goals in `SCOPE.md` are done and measured. Everything
-below is a measurement on the reference model, not a plan.
+**All fifteen goals in `SCOPE.md` are done and measured**, and
+`python tools/smoketest.py` exercises every one of them against the real
+model, the real NVMe and the real GPU in about ten seconds. Everything below
+is a measurement on the reference model, not a plan.
 
 | | |
 |---|---|
