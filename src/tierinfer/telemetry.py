@@ -172,11 +172,24 @@ class Telemetry:
         self._write(e.to_json())
         return e
 
-    def snapshot(self, sources: Mapping[str, Any],
-                 fields: Mapping[str, Iterable[str]] | None = None) -> Snapshot:
-        """Read every named component's counters into one record."""
+    def snapshot(self, sources: Mapping[str, Any] | None = None,
+                 fields: Mapping[str, Iterable[str]] | None = None,
+                 values: Mapping[str, Any] | None = None) -> Snapshot:
+        """Read every named component's counters into one record.
+
+        ``values`` takes an already-namespaced mapping, which is how an
+        adapter contributes: a runtime's counters are normalised by the
+        adapter that knows that runtime's shape, not by this module, which
+        would otherwise have to know every runtime there is.
+        """
         spec = fields or STANDARD_FIELDS
-        values: dict[str, Any] = {}
+        sources = sources or {}
+        collected = dict(values or {})
+        for key in collected:
+            if "." not in key:
+                raise TelemetryError(
+                    f"{key!r} is not namespaced; a bare counter cannot be told "
+                    "apart from another component's")
         for namespace, source in sources.items():
             if source is None:
                 continue
@@ -185,8 +198,8 @@ class Telemetry:
                 raise TelemetryError(
                     f"no field list for namespace {namespace!r}; add it to "
                     "STANDARD_FIELDS rather than letting the schema drift")
-            values.update(collect(namespace, source, names))
-        s = Snapshot(at=self.clock(), run=self.run, values=values)
+            collected.update(collect(namespace, source, names))
+        s = Snapshot(at=self.clock(), run=self.run, values=collected)
         self._write(s.to_json())
         return s
 

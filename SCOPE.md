@@ -103,7 +103,16 @@ Each step must be measurable on its own before the next begins.
     top is worth 1%, and the adaptive arm reaches the best fixed depth without
     being told which it is. A 3.8% miss rate costs two thirds of the time,
     because the tiers are tenfold apart.*
-11. **FreeToken adapter.**
+11. **FreeToken adapter.** — *done. FreeToken already tiers experts itself
+    and owns its loading path, and goal 6 measured what happens to an adapter
+    that tries to manage residency in a runtime that owns its own: nothing,
+    slowly. So the adapter does the two things that are left. Configuration
+    in: the derived budget becomes `--moe-cache-size`, `--moe-cache-policy`
+    and `--kv-reserve-tokens`, and an unusable configuration is refused
+    before a server spends forty seconds loading 56 GB to discover it.
+    Telemetry out: `/v1/stats` is normalised into the shared `runtime.*`
+    namespace, with an unreported counter coming back absent rather than
+    zero. Standard-library HTTP only.*
 12. **FlowRunner capability.** Declarative configuration, telemetry out.
 13. **Unified telemetry.** Runtime-independent schema, machine-readable.
     — *done. Two record kinds, events and snapshots, versioned, JSON Lines,
