@@ -40,7 +40,10 @@ Each step must be measurable on its own before the next begins.
    controlled buffer, asynchronously, independently of demand paging, and
    time it.
 5. **Bounded RAM expert cache.** Insertion, hit, miss, eviction, pinning,
-   adaptive retention.
+   adaptive retention. — *policy done and measured (+7 to +14 points of hit
+   rate over LRU); victim selection is an O(n) scan costing over a
+   millisecond at 3 000 resident experts and must be replaced by a heap
+   before this goes near an inference loop*
 6. **llama.cpp integration.** Real inference with TierInfer assisting
    residency, benchmarkable against native mmap. A clean baseline mode must
    remain.
