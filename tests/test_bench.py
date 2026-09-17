@@ -218,3 +218,13 @@ def test_two_limited_runs_in_the_same_second_do_not_collide():
     a = run_limited([sys.executable, "-c", "print('a')"], memory_max_bytes=128 * MB, timeout=60)
     b = run_limited([sys.executable, "-c", "print('b')"], memory_max_bytes=128 * MB, timeout=60)
     assert a.exit_code == 0 and b.exit_code == 0, (a.stdout, b.stdout)
+
+
+def test_a_child_is_given_no_stdin():
+    """A runtime that thinks it is interactive waits on a terminal the
+    benchmark has not got, and an idle wait that produces a number is worse
+    than a failure that does not."""
+    e = run_limited([sys.executable, "-c",
+                     "import sys; print('closed' if not sys.stdin.read() else 'open')"])
+    assert e.exit_code == 0
+    assert "closed" in e.stdout

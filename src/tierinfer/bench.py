@@ -262,6 +262,11 @@ def run_limited(argv: list[str], *, memory_max_bytes: int | None = None,
     when it is asked for, so the unconstrained conditions are not measured
     through a layer the constrained one adds.
 
+    The child gets no stdin. A runtime that decides it is interactive will
+    otherwise sit waiting on a terminal the benchmark does not have, and a
+    measured condition that is really an idle wait is worse than a failed
+    one: it produces a number.
+
     The peak is sampled from the scope's own ``memory.peak`` while the child
     runs, because systemd removes a transient scope as soon as it exits and
     asking afterwards usually returns nothing. ``memory.peak`` is a high
@@ -285,7 +290,8 @@ def run_limited(argv: list[str], *, memory_max_bytes: int | None = None,
     try:
         if peak:
             peak.start()
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                              stdin=subprocess.DEVNULL)
         out, code = proc.stdout + proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
         timed_out = True

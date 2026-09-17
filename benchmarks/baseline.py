@@ -42,34 +42,74 @@ from tierinfer.bench import (  # noqa: E402
 GB = 1024 ** 3
 DEFAULT_LLAMA = Path.home() / "llama.cpp" / "build" / "bin" / "llama-cli"
 
-# llama.cpp prints "eval time = 1234.56 ms / 64 runs ( 19.29 ms per token, 51.84 tokens per second)"
-EVAL_RE = re.compile(r"eval time =.*?([\d.]+)\s+tokens per second", re.S)
-LOAD_RE = re.compile(r"load time =\s*([\d.]+)\s*ms")
+# llama.cpp's timing output has changed shape between builds, and a parser
+# that knows only one of them reports a table of dashes rather than failing.
+#
+# b9888 and later print one line:
+#     [ Prompt: 368,9 t/s | Generation: 67,4 t/s ]
+# and no load time at all. Note the decimal comma — this host's locale is
+# Danish, so a parser expecting a point reads 67,4 as 67.
+#
+# Older builds print, among several lines that all end in "tokens per second":
+#     llama_perf_context_print:        eval time = 1234.56 ms / 64 runs ( ... 51.84 tokens per second)
+MODERN_GEN_RE = re.compile(r"Generation:\s*([\d.,]+)\s*t/s")
+MODERN_PROMPT_RE = re.compile(r"Prompt:\s*([\d.,]+)\s*t/s")
+LEGACY_EVAL_RE = re.compile(r"eval time =.*?([\d.]+)\s+tokens per second", re.S)
+LEGACY_LOAD_RE = re.compile(r"load time =\s*([\d.]+)\s*ms")
+
+
+def _number(text: str) -> float:
+    """Read a figure that may use either decimal separator."""
+    return float(text.replace(",", "."))
 
 
 def throughput(stdout: str) -> float | None:
-    """Generation tokens per second as llama.cpp measured it, if it got that far."""
-    hits = EVAL_RE.findall(stdout)
+    """Generation tokens per second as the runtime measured it, if it got that far."""
+    m = MODERN_GEN_RE.search(stdout)
+    if m:
+        return _number(m.group(1))
+    hits = LEGACY_EVAL_RE.findall(stdout)
     return float(hits[-1]) if hits else None
 
 
+def prompt_throughput(stdout: str) -> float | None:
+    """Prompt-processing tokens per second, where the runtime reports it."""
+    m = MODERN_PROMPT_RE.search(stdout)
+    return _number(m.group(1)) if m else None
+
+
 def load_seconds(stdout: str) -> float | None:
-    m = LOAD_RE.search(stdout)
-    return float(m.group(1)) / 1000.0 if m else None
+    """Model load time, where the runtime reports it.
+
+    b9888 does not, and nothing here invents it. For a four-token run the
+    wall column is load-dominated anyway, which is what the storage
+    conditions move.
+    """
+    m = LEGACY_LOAD_RE.search(stdout)
+    return _number(m.group(1)) / 1000.0 if m else None
 
 
 def argv_for(llama: Path, model: Path, tokens: int, threads: int, prompt: str) -> list[str]:
+    """The command, pinned to what actually terminates.
+
+    ``-st`` (single turn) is what ends the run. ``-no-cnv`` is not: this
+    build answers it with "--no-conversation is not supported by llama-cli"
+    and carries on into conversation mode, where it waits on a stdin that
+    a benchmark does not have and prints a prompt marker forever. The first
+    version of this harness spent 1 127 seconds on a "warm" condition that
+    was doing nothing at all, and wrote a 3.9 GB log doing it.
+    """
     return [str(llama), "-m", str(model), "-ngl", "0", "-t", str(threads),
-            "-n", str(tokens), "-p", prompt, "--no-warmup", "-no-cnv"]
+            "-n", str(tokens), "-p", prompt, "--no-warmup", "-st"]
 
 
 def row(m: Measurement) -> str:
     tps = throughput(m.execution.stdout)
-    load = load_seconds(m.execution.stdout)
+    pps = prompt_throughput(m.execution.stdout)
     peak = m.execution.peak_memory_bytes
     return (f"{m.condition:<16}"
             f"{(f'{tps:.2f}' if tps else '—'):>10}"
-            f"{(f'{load:.0f}s' if load else '—'):>9}"
+            f"{(f'{pps:.0f}' if pps else '—'):>9}"
             f"{m.execution.wall_seconds:>9.0f}s"
             f"{m.disk.gb_read:>10.1f}"
             f"{m.disk.bandwidth_gbps:>9.2f}"
@@ -80,7 +120,7 @@ def row(m: Measurement) -> str:
             f"{(f'{peak / GB:.1f}' if peak else '—'):>9}")
 
 
-HEADER = (f"{'condition':<16}{'tok/s':>10}{'load':>9}{'wall':>10}{'GB read':>10}"
+HEADER = (f"{'condition':<16}{'gen t/s':>10}{'prm t/s':>9}{'wall':>10}{'GB read':>10}"
           f"{'GB/s':>9}{'IOPS':>10}{'mean rd':>10}{'await':>9}{'resident':>10}{'peak GB':>9}")
 
 
