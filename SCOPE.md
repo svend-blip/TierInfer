@@ -59,7 +59,13 @@ Each step must be measurable on its own before the next begins.
    hit rate; every fall back to the exact scan is counted in `heap_fallbacks`*
 6. **llama.cpp integration.** Real inference with TierInfer assisting
    residency, benchmarkable against native mmap. A clean baseline mode must
-   remain.
+   remain. — *routing capture done and nothing in llama.cpp is patched:
+   `tools/trace` reads the `ffn_moe_topk-<layer>` tensors through the public
+   `cb_eval` hook and links against the existing build, so the clean baseline
+   is the default rather than a mode. Two 400-token traces from GLM-4.5-Air
+   are in `traces/`, and `benchmarks/REAL-ROUTING.md` reports what they
+   overturn. Residency assist — TierInfer shaping the page cache under a live
+   run — is the remaining half of this goal.*
 7. **Async prefetch.** Read-ahead overlapping compute; measure stalls
    eliminated, accuracy, lead time and wasted bandwidth. — *built: the one
    place a guess causes I/O, and the only place the safety rule has teeth —

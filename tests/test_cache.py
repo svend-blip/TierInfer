@@ -36,10 +36,16 @@ def test_capacity_is_bytes_not_entries():
     assert c.used_bytes <= 3 * MB
 
 
-def test_the_frequently_used_expert_survives_the_recently_used_one():
-    """The reason this is not an LRU: recency alone gets this backwards."""
+def test_under_frequency_weighting_the_often_used_expert_survives():
+    """What the policy does when told to lead with frequency.
+
+    This used to be the default and used to be called "the reason this is not
+    an LRU". Measured against real routing it was the weaker signal, so the
+    default is now recency-led and this behaviour is opt-in — the code is
+    unchanged, the claim about it is not.
+    """
     t = _tracker([{(0, 1)}] * 8 + [{(0, 2)}])
-    c = ExpertCache(2 * MB, t)
+    c = ExpertCache(2 * MB, t, w_rate=1.0, w_recency=0.0)
     c.put((0, 1), None, MB)
     c.put((0, 2), None, MB)
     c.put((0, 3), None, MB)          # forces one eviction
@@ -93,7 +99,7 @@ def test_a_large_expert_must_outweigh_the_small_ones_it_displaces():
 
 def test_would_evict_for_names_the_cost_before_paying_it():
     t = _tracker([{(0, 1)}] * 5)
-    c = ExpertCache(3 * MB, t)
+    c = ExpertCache(3 * MB, t, w_rate=1.0, w_recency=0.0)
     c.put((0, 1), None, MB)
     c.put((0, 2), None, MB)
     c.put((0, 3), None, MB)
@@ -136,7 +142,7 @@ def test_the_heap_picks_what_the_exact_scan_would_when_nothing_has_drifted():
 def test_a_stale_entry_whose_value_rose_is_re_pushed_rather_than_evicted():
     """The failure a naive heap would have: evicting on a score that has aged."""
     t = ExpertTracker()
-    c = ExpertCache(3 * MB, t)
+    c = ExpertCache(3 * MB, t, w_rate=1.0, w_recency=0.0)
     for k in ((0, 1), (0, 2)):
         t.begin_token(); t.record({k})
         c.put(k, None, MB)
@@ -210,11 +216,73 @@ def test_asking_for_a_victim_does_not_remove_it_from_the_running():
     assert c.heap_fallbacks == 0
 
 
-def test_a_scan_fallback_is_always_counted():
+def test_a_drained_heap_falls_back_to_the_exact_lru_front_not_a_scan():
+    """The front is exact and O(1), so an empty heap is no longer a reason
+    to walk every entry."""
     t = _tracker([{(0, 1)}] * 3)
-    c = ExpertCache(3 * MB, t)
+    c = ExpertCache(3 * MB, t, w_rate=0.0, w_recency=1.0)
     for k in ((0, 1), (0, 2), (0, 3)):
         c.put(k, None, MB)
-    c._heap.clear()                             # simulate a drained heap
-    assert c._choose_victim() == c._scan_victim()
+    c.get((0, 1))                               # (0,2) is now least recent
+    c._heap.clear()
+    assert c._choose_victim() == (0, 2)
+    assert c.heap_fallbacks == 0
+
+
+def test_drift_past_the_budget_reaches_the_exact_scan_and_is_counted():
+    """The defect this replaced: exhausting the budget returned the stale
+    candidate instead of measuring exactly, and counted nothing. On real
+    routing that cost 5 to 12 points of hit rate against plain LRU, silently."""
+    # Every key must have a positive value, or nothing can drift: a stored
+    # score of zero is never an underestimate of a true score of zero.
+    keys = [(0, i) for i in range(6)]
+    t = _tracker([set(keys)] * 4)
+    c = ExpertCache(8 * MB, t)
+    c.revalidate_budget = 2
+    for k in keys:
+        c.put(k, None, MB)
+    assert all(c.value(k) > 0 for k in keys), "the fixture cannot drift"
+    # Make every stored score an underestimate, so every pop wants re-pushing.
+    import heapq as _h
+    c._heap = [(v * 1e-9, s, k) for v, s, k in c._heap]
+    _h.heapify(c._heap)
+    victim = c._choose_victim()
     assert c.heap_fallbacks == 1
+    assert victim == c._scan_victim()
+
+
+# -- what the default policy is, and what it is worth -------------------
+
+
+def test_the_default_policy_is_recency_led():
+    """Measured on real routing, frequency is the weaker signal. The default
+    reflects the measurement rather than the original hypothesis."""
+    c = ExpertCache(2 * MB)
+    assert c.w_recency > 0 and c.w_rate == 0
+
+
+def test_the_default_evicts_exactly_what_lru_would():
+    """Configured this way the policy equals LRU. Saying so is the point:
+    before the access-order front existed, the heap lost 5 to 12 points to
+    plain LRU on measured routing, with heap_fallbacks reading zero."""
+    c = ExpertCache(3 * MB)
+    for k in ((0, 1), (0, 2), (0, 3)):
+        c.put(k, None, MB)
+    c.get((0, 1))                      # (0,2) is now the least recently used
+    c.get((0, 3))
+    c.put((0, 4), None, MB)
+    assert (0, 2) not in c
+    assert (0, 1) in c and (0, 3) in c
+    assert c.heap_fallbacks == 0
+
+
+def test_recency_is_measured_in_accesses_not_tokens():
+    """One token touches 360 experts here; at token granularity they all tie."""
+    t = ExpertTracker()
+    c = ExpertCache(4 * MB, t)
+    t.begin_token()
+    for k in ((0, 1), (0, 2), (0, 3)):
+        c.put(k, None, MB)
+    t.record([(0, 1), (0, 2), (0, 3)])   # all three used in the same token
+    assert c.recency_score((0, 3)) > c.recency_score((0, 1)), \
+        "entries used within one token must still be ordered"

@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from tierinfer.predict import (  # noqa: E402
     AdaptiveBlend, Blend, Frequency, Persistence, Transition, evaluate,
 )
+from tierinfer.trace import describe, read_trace, routings  # noqa: E402
 
 
 def synthetic_trace(tokens: int, layers: int, experts: int, routed: int,
@@ -79,11 +80,32 @@ def main() -> int:
     ap.add_argument("--experts", type=int, default=128)
     ap.add_argument("--routed", type=int, default=8)
     ap.add_argument("--warmup", type=int, default=100)
+    ap.add_argument("--trace", type=Path, default=None,
+                    help="a captured routing trace (tools/trace); without it, "
+                         "a synthetic one is generated and the result is about "
+                         "the code rather than about any model")
+    ap.add_argument("--prompt-tokens", action="store_true",
+                    help="score prompt tokens too; by default only generated ones, "
+                         "because a prompt decode needs every expert at once and "
+                         "nothing is being predicted ahead")
     a = ap.parse_args()
 
-    trace = list(synthetic_trace(a.tokens, a.layers, a.experts, a.routed))
-    print(f"{a.tokens} tokens, {a.layers} layers, {a.experts} experts, "
-          f"{a.routed} routed per layer; {a.warmup} warmup tokens not scored\n")
+    if a.trace:
+        info = describe(a.trace)
+        rows = read_trace(a.trace, prompt=a.prompt_tokens)
+        trace = list(routings(rows))
+        a.experts = max(e for r in trace for es in r.values() for e in es) + 1
+        print(f"{a.trace.name}: {info.tokens} tokens ({info.prompt_tokens} prompt, "
+              f"{info.generated_tokens} generated), {len(info.layers)} MoE layers, "
+              f"{info.n_used} routed per layer, {info.experts_seen} distinct experts seen")
+        print(f"scoring {len(trace)} tokens"
+              f"{'' if a.prompt_tokens else ' (generated only)'}; "
+              f"{a.warmup} warmup tokens not scored\n")
+    else:
+        trace = list(synthetic_trace(a.tokens, a.layers, a.experts, a.routed))
+        print(f"SYNTHETIC — this scores the code, not a model.")
+        print(f"{a.tokens} tokens, {a.layers} layers, {a.experts} experts, "
+              f"{a.routed} routed per layer; {a.warmup} warmup tokens not scored\n")
 
     def build():
         freq, pers, trans = Frequency(), Persistence(), Transition()

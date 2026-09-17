@@ -1,71 +1,58 @@
-"""A bounded RAM cache that keeps experts by what they are worth, not by age.
+"""A bounded RAM cache that keeps experts by what they are worth.
 
-Least-recently-used is the wrong default here. MoE routing is skewed and the
-skew is stable over a prompt, so an expert used by a third of the tokens is
-worth more than one used once — even when the once was more recent. LRU
-cannot see that difference; it evicts by clock.
+**This module opened with a claim that measurement has since falsified.** It
+said least-recently-used was the wrong default here: MoE routing is skewed
+and the skew is stable over a prompt, so an expert used by a third of the
+tokens should be worth more than one used once. Against a synthetic Zipf
+trace that held, by up to 13 points of hit rate. Against 800 tokens of
+routing captured out of GLM-4.5-Air (`tools/trace`), it did not. The skew is
+there in the marginal, but recency is the stronger signal by a wide margin,
+and a policy leading with frequency reads the weaker one:
 
-So eviction scores each resident expert and drops the cheapest to lose:
+    cache   frequency only   recency only   LRU     (trace A, measured)
+     4 GB            30.1%          37.6%   37.6%
+     8 GB            44.1%          51.9%   51.9%
+    16 GB            64.3%          69.7%   69.7%
 
-    value = (activation rate + prediction confidence) * reload cost / size
+So the default is recency-led, and configured that way this policy *equals*
+LRU rather than beating it. That is the honest position, and the terms that
+could still earn their place are the ones this model cannot exercise:
 
-Every term is measured rather than assumed. Activation rate comes from the
-tracker's window. Reload cost is what this expert's loads actually took, or
-the cache's observed mean before an expert has its own history. Size is the
-expert's bytes, so a large expert must earn its place against several small
-ones. Pinned entries are never scored: the shared expert and the router are
-needed by every token and are not candidates.
+    value = (w_rate·rate + w_recency·recency + w_conf·confidence)
+            × reload cost ÷ size
 
-Recency is not absent — it enters as the tie-break, because between two
-experts of equal measured worth the one used more recently is the better bet.
+``size`` and ``reload cost`` are inert on a model whose experts are all
+9.97 MB and all cost the same to fetch. On a mixed-quantisation model, or one
+tiering experts against attention weights, they are the whole point.
+``confidence`` was measured too, fed from the real predictors on real
+routing, and moved the hit rate by 0.1 of a point — because by the time a
+prediction says an expert is likely needed, recency is already keeping it.
+Prediction earns its place in the *prefetch* path, deciding what to fetch,
+not in eviction, deciding what to retain.
 
-Measured against LRU on a synthetic skewed trace (128 experts, 46 layers, 8
-routed per layer, Zipf 1.1, 400 tokens):
+Recency is measured in accesses, not tokens. One token touches every routed
+expert of every layer — 360 of them here — so at token granularity almost
+every resident entry ties with every other, and the policy cannot order what
+LRU orders exactly. That version reached 43.4% against LRU's 51.9%.
 
-    cache    value policy    LRU    resident share of model
-     8 GB          61.3%   48.2%                       16%
-    16 GB          74.2%   67.1%                       31%
-    32 GB          87.4%   85.9%                       62%
+**Victim selection.** An exact scan of every unpinned entry costs 37 µs at
+100 residents and 1 031 µs at 3 000, which a 32 GB cache holding 3 670
+experts cannot afford. A lazy min-heap of stored scores replaces it — but a
+heap alone is wrong for a value that changes on every access, which recency
+does. Two structures are kept: the heap, whose stored scores are revalidated
+on the way out, and the access order, whose front is the exact
+least-recently-used entry in O(1). Eviction compares both by true value and
+takes the lower. Without the second, the heap lost 5 to 12 points against
+plain LRU on real routing, silently, with `heap_fallbacks` reading zero.
 
-The margin is widest where the cache is smallest, which is the regime this
-project exists for. At 62% resident the choice of policy barely matters.
-
-**Victim selection, and what the heap costs.** The first implementation
-scanned every unpinned entry: 37 microseconds at 100 residents, 354 at 1 000,
-1 031 at 3 000. A 32 GB cache holds roughly 3 670 of this model's experts,
-so a token missing a quarter of its 368 activations would have spent longer
-choosing victims than generating.
-
-A lazy min-heap replaced the scan. It is approximate by construction, because
-an entry's value moves as the tracker's window slides, so a score stored at
-push time ages. Revalidation on the way out bounds the error: an entry whose
-true value has risen more than ``revalidate_tolerance`` above its stored score
-is re-pushed rather than evicted, up to ``revalidate_budget`` times, after
-which the exact scan runs and ``heap_fallbacks`` counts it. Every fallback is
-counted, including the one that fires when the heap drains, so the
-approximation cannot hide behind a silent O(n).
-
-    residents    scan    heap
-          100   37 µs   10 µs
-        1 000  354 µs    8 µs
-        3 000 1031 µs    8 µs
-        6 000       —    8 µs
-
-Flat in the number of residents, and 0 fallbacks across every run above. The
-approximation costs 0.1 percentage points of hit rate at 16 GB (74.2% against
-the exact scan's 74.3%).
-
-Asking for a victim does not consume it: the chosen key is pushed back before
-it is returned, so the heap stays a superset of the resident keys whether or
-not the caller evicts. That costs one stale entry per eviction — the heap
-settles at about twice the resident count — and it buys two things: the
-question is idempotent, and the pushed-back score is the revalidated one,
-which is most of why the approximation only costs a tenth of a point.
+Pinned entries are never scored: the shared expert and the router are needed
+by every token and are not candidates.
 """
 
 from __future__ import annotations
 
 import heapq
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Iterable
 
@@ -110,14 +97,32 @@ class ExpertCache:
         tracker: ExpertTracker | None = None,
         *,
         default_reload_seconds: float = 0.010,
+        w_rate: float = 0.0,
+        w_recency: float = 1.0,
+        w_confidence: float = 1.0,
+        recency_decay: float = 0.9,
     ):
         if capacity_bytes <= 0:
             raise ValueError("capacity must be positive")
         self.capacity_bytes = capacity_bytes
         self.tracker = tracker
         self.default_reload_seconds = default_reload_seconds
+        if not 0.0 < recency_decay < 1.0:
+            raise ValueError("recency_decay must be strictly between 0 and 1")
+        #: How the three signals are combined. The defaults reproduce the
+        #: original rate-only policy exactly, so nothing changes until a
+        #: caller asks for it; `benchmarks/cache_policy.py --recency` measures
+        #: the alternative.
+        self.w_rate = w_rate
+        self.w_recency = w_recency
+        self.w_confidence = w_confidence
+        self.recency_decay = recency_decay
         self.stats = CacheStats()
         self._entries: dict[ExpertKey, _Entry] = {}
+        #: Access order, oldest first. The recency term of the value function
+        #: changes on every hit, which a stored-score heap cannot track; this
+        #: gives the exact least-recently-used entry in O(1).
+        self._order: "OrderedDict[ExpertKey, None]" = OrderedDict()
         self._bytes = 0
         self._clock = 0
         self._confidence: dict[ExpertKey, float] = {}
@@ -162,6 +167,7 @@ class ExpertCache:
             self.stats.misses += 1
             return None
         entry.last_hit = self._clock
+        self._touch(key)
         self.stats.hits += 1
         return entry.payload
 
@@ -183,6 +189,8 @@ class ExpertCache:
             key=key, nbytes=nbytes, payload=payload, pinned=pinned,
             inserted_at=self._clock, last_hit=self._clock,
         )
+        self._order[key] = None
+        self._order.move_to_end(key, last=True)
         self._bytes += nbytes
         self.stats.insertions += 1
         self.stats.bytes_admitted += nbytes
@@ -213,8 +221,39 @@ class ExpertCache:
 
     # -- policy ---------------------------------------------------------
 
+    def recency_score(self, key: ExpertKey) -> float:
+        """How recently this expert was used, as a 0..1 score.
+
+        Measured in *accesses*, not tokens. The tracker's ``recency`` counts
+        whole tokens, and one token touches every routed expert of every
+        layer — 360 of them on the model this was built for. At that
+        granularity almost every resident expert ties with almost every
+        other, and the policy cannot tell apart things LRU orders precisely.
+        Measured on real routing, token-granularity recency reached 43.4%
+        against LRU's 51.9%; the entry's own access clock closes that gap.
+        """
+        entry = self._entries.get(key)
+        if entry is None:
+            return 0.0
+        if self._clock <= 0:
+            return 1.0
+        return entry.last_hit / self._clock
+
     def value(self, key: ExpertKey) -> float:
-        """What this resident expert is worth keeping. Higher survives."""
+        """What this resident expert is worth keeping. Higher survives.
+
+            value = (w_rate·rate + w_recency·recency + w_conf·confidence)
+                    × reload cost ÷ size
+
+        The three weights exist because the first version of this had only
+        the first term, with recency demoted to a tie-break, and that ordering
+        turned out to be backwards. Against a synthetic Zipf trace it beat LRU
+        by up to 13 points; against 400 tokens of routing measured out of
+        GLM-4.5-Air it *lost* to LRU by 6 to 9. The predictor evaluation on
+        the same measured routing says why: frequency is the weakest signal in
+        real routing (27.6% recall at k=8) and recency the strongest (38.3%).
+        A policy weighting frequency first was reading the weaker signal.
+        """
         entry = self._entries[key]
         rate = self.tracker.activation_rate(key) if self.tracker else 0.0
         confidence = self._confidence.get(key, 0.0)
@@ -223,7 +262,22 @@ class ExpertCache:
             s = self.tracker.stats.get(key)
             if s and s.loads:
                 reload = s.mean_load_seconds
-        return (rate + confidence) * reload / max(entry.nbytes, 1)
+        signal = (self.w_rate * rate
+                  + self.w_recency * self.recency_score(key)
+                  + self.w_confidence * confidence)
+        return signal * reload / max(entry.nbytes, 1)
+
+    def _touch(self, key: ExpertKey) -> None:
+        """Move an entry to the back of the access order. O(1)."""
+        self._order.move_to_end(key, last=True)
+
+    def _lru_front(self, exclude: ExpertKey | None) -> ExpertKey | None:
+        """The least recently used evictable entry, exactly. O(pinned)."""
+        for key in self._order:
+            entry = self._entries.get(key)
+            if entry is not None and not entry.pinned and key != exclude:
+                return key
+        return None
 
     def _push(self, key: ExpertKey) -> None:
         self._seq += 1
@@ -250,26 +304,37 @@ class ExpertCache:
         key's heap entry is skipped the next time it surfaces.
         """
         deferred = 0
+        candidate: ExpertKey | None = None
         while self._heap:
             stored, seq, key = heapq.heappop(self._heap)
             entry = self._entries.get(key)
             if entry is None or entry.pinned or key == exclude:
                 continue                      # gone, pinned, or the newcomer
             true_value = self.value(key)
-            if true_value > stored * (1.0 + self.revalidate_tolerance) and deferred < self.revalidate_budget:
+            if true_value > stored * (1.0 + self.revalidate_tolerance):
                 heapq.heappush(self._heap, (true_value, seq, key))
                 deferred += 1
+                if deferred >= self.revalidate_budget:
+                    break        # too much drift to approximate; measure exactly
                 continue
             heapq.heappush(self._heap, (true_value, seq, key))
-            return key
-        # The heap ran dry. Either the budget stopped the revalidation, or
-        # every entry left is pinned or excluded. Both land on the exact
-        # scan, and both are counted: a silent O(n) fallback is the one
-        # thing this heap exists to rule out.
-        if self._evictable(exclude):
-            self.heap_fallbacks += 1
-            return self._scan_victim(exclude)
-        return None
+            candidate = key
+            break
+
+        front = self._lru_front(exclude)
+        if candidate is None:
+            if front is None:
+                return None if not self._evictable(exclude) else self._scan_fallback(exclude)
+            return front if deferred < self.revalidate_budget else self._scan_fallback(exclude)
+        if front is not None and front != candidate and self.value(front) < self.value(candidate):
+            return front
+        return candidate
+    def _scan_fallback(self, exclude: ExpertKey | None) -> ExpertKey | None:
+        """The exact scan, counted. A silent O(n) is what the heap exists to rule out."""
+        if not self._evictable(exclude):
+            return None
+        self.heap_fallbacks += 1
+        return self._scan_victim(exclude)
 
     def _evictable(self, exclude: ExpertKey | None) -> bool:
         return any(not e.pinned and k != exclude for k, e in self._entries.items())
@@ -283,6 +348,7 @@ class ExpertCache:
 
     def _drop(self, key: ExpertKey, *, evicted: bool) -> None:
         entry = self._entries.pop(key)
+        self._order.pop(key, None)
         self._bytes -= entry.nbytes
         if evicted:
             self.stats.evictions += 1

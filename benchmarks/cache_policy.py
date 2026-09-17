@@ -80,6 +80,15 @@ def main(argv=None) -> int:
     p.add_argument("--expert-mb", type=float, default=8.94)
     p.add_argument("--cache-gb", type=float, default=16.0)
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--trace", type=Path, default=None,
+                   help="a captured routing trace (tools/trace); without it the "
+                        "trace is synthetic and the result is about the code")
+    p.add_argument("--prompt-tokens", action="store_true")
+    p.add_argument("--w-recency", type=float, default=0.0,
+                   help="weight on the recency term in the value function; 0 is "
+                        "the original rate-only policy")
+    p.add_argument("--w-rate", type=float, default=1.0)
+    p.add_argument("--recency-decay", type=float, default=0.9)
     a = p.parse_args(argv)
 
     rng = random.Random(a.seed)
@@ -87,15 +96,27 @@ def main(argv=None) -> int:
     capacity = int(a.cache_gb * 1024 ** 3)
 
     # One trace, replayed through both policies, so the comparison is fair.
-    trace = []
-    for _ in range(a.tokens):
-        token = []
-        for layer in range(a.layers):
-            token += [(layer, e) for e in zipf_choice(rng, a.experts, a.skew, a.used)]
-        trace.append(token)
+    if a.trace:
+        from tierinfer.trace import describe, read_trace
+        info = describe(a.trace)
+        rows = read_trace(a.trace, prompt=a.prompt_tokens)
+        trace = [[(l, e) for l, es in r.routing.items() for e in es] for r in rows]
+        a.layers, a.experts = len(info.layers), info.experts_seen
+        a.used, a.tokens = info.n_used, len(trace)
+        source = (f"{a.trace.name}: {info.tokens} tokens "
+                  f"({info.generated_tokens} generated), measured routing")
+    else:
+        trace = []
+        for _ in range(a.tokens):
+            token = []
+            for layer in range(a.layers):
+                token += [(layer, e) for e in zipf_choice(rng, a.experts, a.skew, a.used)]
+            trace.append(token)
+        source = f"SYNTHETIC, skew {a.skew} — this scores the code, not a model"
 
     tracker = ExpertTracker(window=128)
-    value_cache = ExpertCache(capacity, tracker)
+    value_cache = ExpertCache(capacity, tracker, w_rate=a.w_rate,
+                              w_recency=a.w_recency, recency_decay=a.recency_decay)
     lru = LRUCache(capacity)
 
     for token in trace:
@@ -109,8 +130,11 @@ def main(argv=None) -> int:
 
     total = a.layers * a.experts
     resident = capacity / size
+    print(source)
+    print(f"value policy: w_rate {a.w_rate:g}, w_recency {a.w_recency:g}, "
+          f"decay {a.recency_decay:g}")
     print(f"{a.experts} experts x {a.layers} layers = {total} slots, "
-          f"{a.used} routed per layer per token, skew {a.skew}")
+          f"{a.used} routed per layer per token")
     print(f"expert {a.expert_mb:.2f} MB, cache {a.cache_gb:.1f} GB = "
           f"{resident:.0f} experts resident ({resident / total:.0%} of the model)")
     print(f"{a.tokens} tokens, {len(trace[0])} activations per token\n")
