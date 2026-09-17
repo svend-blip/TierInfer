@@ -89,6 +89,50 @@ short-circuited its own condition and returned the stale candidate. It never
 reached the scan, and `heap_fallbacks` read zero throughout. The claim was
 true of the comment and false of the code.
 
+## The horizon: what residency management has to work with
+
+`benchmarks/horizon.py` asks the question the whole project turns on — how
+much of the file does a window of W consecutive tokens actually need? The
+widest window is reported, not the average, because a residency budget has to
+survive the worst window it meets.
+
+Trace A, with real expert sizes:
+
+| window | experts | of model | experts GB | + floor | of file |
+|-------:|--------:|---------:|-----------:|--------:|--------:|
+| 1 | 360 | 6.2 % | 3.17 | **7.73** | **13.7 %** |
+| 2 | 682 | 11.8 % | 6.02 | 10.57 | 18.7 % |
+| 8 | 1 889 | 32.8 % | 16.67 | 21.22 | 37.6 % |
+| 16 | 2 716 | 47.2 % | 23.99 | 28.54 | 50.5 % |
+| 32 | 3 632 | 63.1 % | 32.09 | **36.65** | 64.9 % |
+| 128 | 4 890 | 84.9 % | 43.17 | 47.73 | 84.5 % |
+| 400 | 5 433 | 94.3 % | 47.93 | 52.48 | 93.0 % |
+
+Trace B agrees to within a point at every width, and consecutive tokens share
+38 % of their experts on A, 36 % on B.
+
+Two things follow, and together they are the case for the project.
+
+**One token needs 7.73 GB — 13.7 % of the file.** The floor is 4.55 GB of
+that, so the experts a token actually routes to are 3.17 GB. A runtime that
+held exactly them would run the same model in an eighth of the memory.
+
+**A 32-token window needs 36.65 GB, and the ceiling that collapsed was
+32 GB.** That is not a coincidence, it is the mechanism: llama.cpp keeps
+whatever it has touched, so after thirty-odd tokens it wants more than the
+ceiling allows and starts evicting things it is about to need again. The
+baseline's 113.6 GB read for a 56.5 GB file is what that looks like from the
+device.
+
+**And it says where the work has to happen.** The needed set doubles by the
+second token and passes half the model by the sixteenth. Anything managing
+residency from *outside* the inference loop — a helper process advising the
+page cache, a periodic sweep — cannot act on a horizon that short. To hold
+7.73 GB instead of 56.47 GB, the decision has to be made between layers, by
+something inside the loop. That is an architectural conclusion drawn from a
+measurement rather than from taste, and it is what `benchmarks/residency.py`
+tests the outside-the-loop alternative against.
+
 ## What is left of the value function
 
 `value = (w_rate·rate + w_recency·recency + w_conf·confidence) × reload ÷ size`
