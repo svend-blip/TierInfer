@@ -36,11 +36,15 @@ PROMPT = ("Write a detailed technical explanation of how mixture-of-experts "
 
 
 def argv_for(model: Path, tokens: int, threads: int, out: Path,
-             expert_map: Path | None, horizon: int) -> list[str]:
+             expert_map: Path | None, horizon: int, evict_after: int) -> list[str]:
     argv = [str(TOOL), "-m", str(model), "-ngl", "0", "-t", str(threads),
             "-n", str(tokens), "-c", "4096", "-p", PROMPT, "-o", str(out)]
-    if expert_map is not None and horizon > 0:
-        argv += ["--expert-map", str(expert_map), "--horizon", str(horizon)]
+    if expert_map is not None and (horizon > 0 or evict_after > 0):
+        argv += ["--expert-map", str(expert_map)]
+        if horizon > 0:
+            argv += ["--horizon", str(horizon)]
+        if evict_after > 0:
+            argv += ["--evict-after", str(evict_after)]
     return argv
 
 
@@ -60,11 +64,15 @@ def main() -> int:
     ap.add_argument("--limit", type=float, default=32.0)
     ap.add_argument("--tokens", type=int, default=16)
     ap.add_argument("--threads", type=int, default=16)
-    ap.add_argument("--horizon", type=int, action="append", default=[])
+    ap.add_argument("--arm", action="append", default=[],
+                    help="an arm as horizon:evict_after, e.g. 0:2 or 2:2; repeatable")
     ap.add_argument("--budget", type=float, default=1800.0)
     ap.add_argument("--out", type=Path, default=ROOT / "benchmarks" / "inloop-report.json")
     a = ap.parse_args()
-    horizons = a.horizon or [2]
+    arms: list[tuple[int, int]] = []
+    for spec in (a.arm or ["2:0"]):
+        h, _, ev = spec.partition(":")
+        arms.append((int(h or 0), int(ev or 0)))
 
     if not TOOL.exists():
         print(f"no {TOOL}; run tools/trace/build.sh first", file=sys.stderr)
@@ -80,15 +88,17 @@ def main() -> int:
           f"{'IOPS':>10}{'mean rd':>10}{'resident':>11}")
 
     results, plain = [], None
-    for label, horizon in [("no assist", 0)] + [(f"horizon {h}", h) for h in horizons]:
+    for horizon, evict in [(0, 0)] + arms:
+        label = "no assist" if (horizon, evict) == (0, 0) else \
+                f"fetch {horizon} / free {evict}"
         argv = argv_for(a.model, a.tokens, a.threads,
-                        scratch / f"inloop-{horizon}.jsonl",
-                        a.expert_map if horizon else None, horizon)
-        m = measure(f"inloop-{horizon}", a.model, argv, cold=True,
+                        scratch / f"inloop-{horizon}-{evict}.jsonl",
+                        a.expert_map if (horizon or evict) else None, horizon, evict)
+        m = measure(f"inloop-{horizon}-{evict}", a.model, argv, cold=True,
                     memory_max_bytes=int(a.limit * GB), timeout=a.budget)
         results.append(m)
         print(row(label, m, a.tokens), flush=True)
-        if horizon == 0:
+        if (horizon, evict) == (0, 0):
             plain = m
         elif plain is not None and not m.execution.timed_out and not plain.execution.timed_out:
             faster = plain.execution.wall_seconds / max(m.execution.wall_seconds, 1e-9)
