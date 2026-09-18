@@ -37,10 +37,16 @@ to need.
 
 ## Status
 
-**All fifteen goals in `SCOPE.md` are done and measured**, and
-`python tools/smoketest.py` exercises every one of them against the real
-model, the real NVMe and the real GPU in about ten seconds. Everything below
-is a measurement on the reference model, not a plan.
+**Real, measured components — and no spine yet.** Every mechanism between
+the GGUF directory and the GPU exists, is tested against real files and a
+real card, and has numbers behind it; `python tools/smoketest.py` exercises
+each against the real model, the real NVMe and the real GPU in about ten
+seconds. What does not exist is the loader that would put any of them under
+a running model: in every inference this project has run, all weight I/O was
+Linux demand paging. `docs/AUDIT-2026-09-18.md` is the component-by-component
+account, and `SCOPE.md` carries the corrected status per goal (6 and 10 are
+not complete; 8, 11 and 12 are partial). Everything below is a measurement on
+the reference model, not a plan.
 
 | | |
 |---|---|
@@ -128,14 +134,19 @@ privileges, so no cache has to be dropped system-wide to get an honest number.
 
 ## What is not built yet
 
-VRAM residency inside a budget, the adaptive tier policy over the runtime
-signals, unified telemetry, automatic configuration from host and model, and
-the FreeToken and FlowRunner adapters. The llama.cpp side captures routing and
-can advise the page cache from inside the forward pass; what it does not yet
-do is manage residency well enough to hold 7.73 GB instead of 56.47.
+**The llama.cpp loader** — the piece that would make llama.cpp take its
+expert weights from TierInfer's buffers instead of from its own memory map.
+Without it the RAM cache, the VRAM working set, the prefetcher and the policy
+are measured under *replayed* real routing, not under a running model, and
+"llama.cpp + TierInfer" has no tokens-per-second. Also absent: a trainable
+prerouter, prefetch priority classes, coalescing in the prefetch path, a
+FlowRunner-side consumer of the capability, and an NVMe tier beneath
+FreeToken. The advisory route was tried first and measured to do nothing
+(`benchmarks/REAL-ROUTING.md`): a live mapping keeps its pages whatever
+`posix_fadvise` is told.
 
 `SCOPE.md` carries the full plan, its order, and what each goal has measured
-so far.
+so far; `docs/SCOPE-ADDENDUM-480B.md` is the current work.
 
 ## Why this is worth doing
 

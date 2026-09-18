@@ -33,29 +33,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from tierinfer.gguf import read_gguf  # noqa: E402
-from tierinfer.index import ModelIndex  # noqa: E402
+from tierinfer.index import load  # noqa: E402
 
 GB = 1024 ** 3
 
 
 def floor_ranges(ix: ModelIndex):
     """Every byte range that is not a routed expert."""
-    routed = set()
-    for layer in ix.moe_layers:
-        for e in range(ix.expert_count):
-            for r in ix.expert(layer, e).ranges:
-                routed.add((r.file_offset, r.nbytes))
     out = []
     for t in ix.gguf.tensors:
-        key = (t.file_offset, t.nbytes)
-        if key in routed:
-            continue
-        # A fused expert tensor is not in `routed` as a whole, only as slabs.
+        # A fused expert tensor is the routed part; everything else is floor.
         if any(t.name.endswith(s) for s in
                ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight")):
             continue
-        out.append((t.file_offset, t.nbytes))
+        out.append((t.path, t.file_offset, t.nbytes))
     out.sort()
     return out
 
@@ -70,11 +61,12 @@ def main() -> int:
     ap.add_argument("--report", type=float, default=30.0)
     a = ap.parse_args()
 
-    ix = ModelIndex(read_gguf(a.model))
+    ix = load(a.model)
     ranges = floor_ranges(ix)
-    total = sum(n for _, n in ranges)
+    total = sum(n for _, _, n in ranges)
     print(f"pin_floor: {len(ranges)} tensors, {total / GB:.2f} GB of "
-          f"{a.model.stat().st_size / GB:.2f} GB, refreshed every {a.interval:g}s",
+          f"{ix.gguf.nbytes_on_disk / GB:.2f} GB in {len(ix.gguf.files)} file(s), "
+          f"refreshed every {a.interval:g}s",
           file=sys.stderr, flush=True)
 
     stop = False
@@ -86,15 +78,16 @@ def main() -> int:
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
 
-    fd = os.open(a.model, os.O_RDONLY)
+    fds = {p: os.open(p, os.O_RDONLY) for p in ix.gguf.files}
     passes = 0
     last_report = time.monotonic()
     try:
         while not stop:
             t0 = time.monotonic()
-            for off, n in ranges:
+            for path, off, n in ranges:
                 if stop:
                     break
+                fd = fds[path]
                 read = 0
                 while read < n:
                     got = os.pread(fd, min(a.chunk, n - read), off + read)
@@ -111,7 +104,8 @@ def main() -> int:
             if sleep > 0:
                 time.sleep(sleep)
     finally:
-        os.close(fd)
+        for fd in fds.values():
+            os.close(fd)
     print(f"pin_floor: stopped after {passes} passes", file=sys.stderr, flush=True)
     return 0
 

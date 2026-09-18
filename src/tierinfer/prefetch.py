@@ -24,6 +24,14 @@ Four numbers come out, and they are the four SCOPE goal 7 asks for:
                       that landed a second early would flatter the policy
 ``wasted_bytes``      read for experts that were never routed to
 
+and one more that the first version folded into ``used``:
+
+``late``              prefetches that were routed to *before they had
+                      finished* — demand waited on them. A late prefetch is
+                      not a stall (the read was already in flight) and not a
+                      useful one (the token still waited); it is its own
+                      thing, and ``late_wait_seconds`` is what it cost.
+
 Waste is not a defect on its own. Holding 16 of 128 experts ready to catch 8
 means at least half of what is read goes unused by construction; the question
 is whether the stalls avoided were worth the bandwidth. Both are reported so
@@ -56,6 +64,14 @@ class PrefetchStats:
     lead_count: int = 0
     pool_exhausted: int = 0
     exact_fallbacks: int = 0
+    late: int = 0
+    late_wait_seconds: float = 0.0
+    timed_out: int = 0
+
+    @property
+    def useful(self) -> int:
+        """Prefetches that had landed before the token asked for them."""
+        return self.used - self.late
 
     @property
     def accuracy(self) -> float:
@@ -90,8 +106,10 @@ class Prefetcher:
     def __init__(self, streamer: ExpertStreamer, cache: ExpertCache,
                  predictor: Predictor,
                  ranges_for: Callable[[ExpertKey], Sequence[ByteRange]],
-                 *, tracker: ExpertTracker | None = None, depth: int = 16) -> None:
+                 *, tracker: ExpertTracker | None = None, depth: int = 16,
+                 wait_timeout: float = 120.0) -> None:
         self.streamer = streamer
+        self.wait_timeout = wait_timeout
         self.cache = cache
         self.predictor = predictor
         self.ranges_for = ranges_for
@@ -99,6 +117,11 @@ class Prefetcher:
         self.depth = depth
         self.stats = PrefetchStats()
         self._inflight: dict[ExpertKey, _InFlight] = {}
+        #: Loads given up on while still reading. Their buffers come back
+        #: when they finish, reaped at the next token boundary — never waited on.
+        self._orphans: list[Load] = []
+        #: What this token has routed to so far, recorded once at ``end_token``.
+        self._routed: set[ExpertKey] = set()
 
     # -- speculation ----------------------------------------------------
 
@@ -149,6 +172,7 @@ class Prefetcher:
         now = time.perf_counter()
         for expert in experts:
             key = (layer, expert)
+            self._routed.add(key)
             if key in self.cache:
                 self.stats.stalls_avoided += 1
                 out[key] = self.cache.get(key)
@@ -158,38 +182,53 @@ class Prefetcher:
                 out[key] = self._collect(key, flight, now)
                 continue
             # Nobody saw this coming. Read it exactly, consulting nothing.
-            self.stats.stalls += 1
-            self.stats.exact_fallbacks += 1
-            data = self.streamer.load_now(list(self.ranges_for(key)))
-            self._admit(key, data)
-            out[key] = data
+            out[key] = self._exact(key)
         return out
 
     def _collect(self, key: ExpertKey, flight: _InFlight, now: float) -> bytes | None:
-        """Take delivery of a prefetch that was right."""
+        """Take delivery of a prefetch that was right.
+
+        Right, but not necessarily in time: a load still reading when the
+        routing names it is *late*, and the wait is measured and counted
+        apart from the ones that had landed.
+        """
+        landed = flight.load.state is State.READY
         try:
-            view = self.streamer.wait(flight.load, timeout=120)
+            view = self.streamer.wait(flight.load, timeout=self.wait_timeout)
+        except TimeoutError:
+            # Still reading after the whole timeout. The buffer belongs to the
+            # worker until it finishes, so it cannot be released here; it is
+            # reaped at a token boundary. The token gets its bytes exactly.
+            self.stats.timed_out += 1
+            self._orphans.append(flight.load)
+            return self._exact(key)
         except StreamError:
             # The speculative read failed. That is not a correctness problem:
             # fall back to the exact path, and count it as a stall, because
             # from the token's point of view that is exactly what it was.
-            self.stats.stalls += 1
-            self.stats.exact_fallbacks += 1
-            data = self.streamer.load_now(list(self.ranges_for(key)))
-            self._admit(key, data)
-            return data
+            return self._exact(key)
+        waited = time.perf_counter() - now
         self.stats.used += 1
         self.stats.stalls_avoided += 1
         self.stats.lead_total += max(0.0, now - flight.issued_at)
         self.stats.lead_count += 1
+        if not landed:
+            self.stats.late += 1
+            self.stats.late_wait_seconds += waited
         data = bytes(view)
         self.streamer.release(flight.load)
         self._admit(key, data)
         return data
 
+    def _exact(self, key: ExpertKey) -> bytes:
+        """The path that consults nothing, counted as the stall it is."""
+        self.stats.stalls += 1
+        self.stats.exact_fallbacks += 1
+        data = self.streamer.load_now(list(self.ranges_for(key)))
+        self._admit(key, data)
+        return data
+
     def _admit(self, key: ExpertKey, data: bytes) -> None:
-        if self.tracker:
-            self.tracker.record({key})
         self.cache.put(key, data, len(data))
 
     def drop_unused(self) -> int:
@@ -197,6 +236,12 @@ class Prefetcher:
 
         Called at a token boundary: a prefetch that the token did not want is
         wrong about *this* token, and holding its slot starves the next one.
+
+        Never waits. A load that has not started is cancelled; one that has
+        finished gives its buffer back now; one that is mid-read is orphaned
+        and its buffer is reaped the next time this runs. The first version
+        waited up to two minutes here for a read to finish so it could be
+        thrown away, which put speculation on the token's critical path.
         """
         dropped = 0
         for key, flight in list(self._inflight.items()):
@@ -204,21 +249,43 @@ class Prefetcher:
             self.stats.wasted_bytes += flight.nbytes
             self.stats.cancelled += 1
             if not self.streamer.cancel(flight.load):
-                # Already read: take delivery only to give the buffer back.
-                try:
-                    self.streamer.wait(flight.load, timeout=120)
-                except StreamError:
-                    pass
-                if flight.load.state in (State.READY, State.FAILED):
-                    try:
-                        self.streamer.release(flight.load)
-                    except StreamError:
-                        pass
+                self._orphans.append(flight.load)
             dropped += 1
+        self._reap()
         return dropped
 
+    def _reap(self) -> None:
+        """Return the buffers of orphaned loads that have since finished."""
+        still: list[Load] = []
+        for load in self._orphans:
+            if load.state in (State.READY, State.FAILED, State.CANCELLED):
+                try:
+                    self.streamer.release(load)
+                except StreamError:
+                    pass
+            elif load.state is State.RELEASED:
+                pass
+            else:
+                still.append(load)
+        self._orphans = still
+
+    @property
+    def orphans(self) -> int:
+        """Loads given up on that are still holding a buffer."""
+        return len(self._orphans)
+
     def end_token(self) -> None:
-        """Close the token: drop what went unused, and start the next window."""
+        """Close the token: record what it routed to, drop what went unused,
+        and start the next window.
+
+        The tracker is told about the token *once*, with everything it routed
+        to. The first version recorded each expert as it was admitted, which
+        made the tracker's per-token history a per-admission history and its
+        activation rate meaningless.
+        """
         self.drop_unused()
         if self.tracker:
+            if self._routed:
+                self.tracker.record(self._routed)
             self.tracker.begin_token()
+        self._routed = set()

@@ -282,7 +282,7 @@ class ExpertStreamer:
             view = memoryview(load._buf)
             written = 0
             for r in load.ranges:
-                got = os.preadv(self.backend.fd, [view[written:written + r.nbytes]],
+                got = os.preadv(self.backend.fd_for(r), [view[written:written + r.nbytes]],
                                 r.file_offset)
                 if got != r.nbytes:
                     raise OSError(f"short read on {r.name}: {got} of {r.nbytes} bytes")
@@ -319,6 +319,13 @@ class ExpertStreamer:
     # -- lifecycle ------------------------------------------------------
 
     def close(self) -> None:
+        """Stop the workers. Anything still queued fails rather than hangs.
+
+        The workers drain what is ahead of the sentinels, so in the ordinary
+        case the queue is empty by the time they exit. If a join times out
+        and something is still queued, its waiter would otherwise block
+        forever on an event nobody will set.
+        """
         if self._closed:
             return
         self._closed = True
@@ -326,6 +333,22 @@ class ExpertStreamer:
             self._queue.put(None)
         for t in self._threads:
             t.join(timeout=5.0)
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except Empty:
+                break
+            if item is None:
+                continue
+            with self._lock:
+                if item.state is not State.QUEUED:
+                    continue
+                item.state = State.FAILED
+                item.error = StreamError("streamer closed before this load started")
+                self.stats.failed += 1
+            item.finished_at = time.perf_counter()
+            self._return_buffer(item)
+            item._done.set()
 
     def __enter__(self) -> "ExpertStreamer":
         return self

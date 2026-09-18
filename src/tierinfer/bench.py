@@ -46,6 +46,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 PAGE = mmap.PAGESIZE
+_LOW_BIT = bytes(b & 1 for b in range(256))
 _libc = ctypes.CDLL("libc.so.6", use_errno=True)
 _libc.mincore.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_ubyte)]
 
@@ -107,6 +108,33 @@ class DiskDelta:
     @property
     def await_ms(self) -> float:
         return self.ms / self.reads if self.reads else 0.0
+
+
+def model_files(model: str | os.PathLike) -> list[Path]:
+    """Every file a model is made of: the shards of a split, else the file itself.
+
+    A path that is not a GGUF at all (a raw blob in a test) is one file.
+    """
+    from .gguf import GGUFError, shard_paths
+    p = Path(model)
+    try:
+        return shard_paths(p)
+    except GGUFError:
+        return [p]
+
+
+def member_devices(device: str) -> list[str]:
+    """The physical members under an md device, empty for a plain device.
+
+    The md layer merges requests before they reach the members, so the same
+    read looks different at ``md0`` and at ``sda``; a measurement that wants
+    to separate Linux, md and the drive has to see both.
+    """
+    root = Path(f"/sys/block/{device}/slaves")
+    if not root.is_dir():
+        return []
+    rows = _diskstat_rows()
+    return sorted(p.name for p in root.iterdir() if p.name in rows)
 
 
 def device_for(path: str | os.PathLike) -> str:
@@ -183,13 +211,24 @@ def residency(path: str | os.PathLike, span: int | None = None) -> Residency:
             vec = (ctypes.c_ubyte * pages)()
             if _libc.mincore(ctypes.c_void_p(addr), ctypes.c_size_t(length), vec) != 0:
                 raise BenchError(f"mincore failed: {os.strerror(ctypes.get_errno())}")
-            resident = sum(1 for b in vec if b & 1)
+            # Bit 0 is "resident"; the rest are reserved and zero on Linux.
+            # Counting in C: a 270 GiB model is 71 million pages, and a
+            # Python loop over them takes longer than the read being measured.
+            resident = bytes(vec).translate(_LOW_BIT).count(b"\x01")
             del vec
             return Residency(str(path), resident, pages)
         finally:
             mm.close()
     finally:
         os.close(fd)
+
+
+def residency_of(paths) -> Residency:
+    """Residency summed over several files — a split model is several."""
+    paths = list(paths)
+    parts = [residency(p) for p in paths]
+    return Residency(str(paths[0]) if len(paths) == 1 else f"{paths[0]} (+{len(paths) - 1})",
+                     sum(r.resident_pages for r in parts), sum(r.total_pages for r in parts))
 
 
 def drop_cache(path: str | os.PathLike) -> Residency:
@@ -203,28 +242,32 @@ def drop_cache(path: str | os.PathLike) -> Residency:
     zero: a page another process still has mapped will not go, and saying so
     is more useful than asserting a clean slate.
     """
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        # A dirty page is not dropped by DONTNEED — it has to reach the disk
-        # first. Without this, a file that was just written or copied stays
-        # fully resident and every "cold" run after it silently measures RAM.
-        os.fsync(fd)
-        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
-    finally:
-        os.close(fd)
-    return residency(path)
+    paths = model_files(path)
+    for p in paths:
+        fd = os.open(p, os.O_RDONLY)
+        try:
+            # A dirty page is not dropped by DONTNEED — it has to reach the disk
+            # first. Without this, a file that was just written or copied stays
+            # fully resident and every "cold" run after it silently measures RAM.
+            os.fsync(fd)
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+    return residency_of(paths)
 
 
 def warm_cache(path: str | os.PathLike, chunk: int = 32 << 20) -> Residency:
-    """Read the whole file so the next run measures RAM rather than NVMe."""
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_WILLNEED)
-        while os.read(fd, chunk):
-            pass
-    finally:
-        os.close(fd)
-    return residency(path)
+    """Read the whole model so the next run measures RAM rather than NVMe."""
+    paths = model_files(path)
+    for p in paths:
+        fd = os.open(p, os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_WILLNEED)
+            while os.read(fd, chunk):
+                pass
+        finally:
+            os.close(fd)
+    return residency_of(paths)
 
 
 # -- running a command under a memory limit -----------------------------
@@ -387,17 +430,23 @@ class Measurement:
     residency_before: Residency
     residency_after: Residency
     notes: list[str] = field(default_factory=list)
+    #: The same delta on each physical member of an md device, keyed by
+    #: name. Empty when the model's device has no members.
+    members: dict[str, DiskDelta] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        d["disk"] = {**asdict(self.disk), "gb_read": self.disk.gb_read,
-                     "bandwidth_gbps": self.disk.bandwidth_gbps, "iops": self.disk.iops,
-                     "mean_read_bytes": self.disk.mean_read_bytes,
-                     "await_ms": self.disk.await_ms}
+        d["disk"] = _delta_dict(self.disk)
+        d["members"] = {k: _delta_dict(v) for k, v in self.members.items()}
         for k in ("residency_before", "residency_after"):
             r = getattr(self, k)
             d[k] = {**asdict(r), "resident_bytes": r.resident_bytes, "fraction": r.fraction}
         return d
+
+
+def _delta_dict(x: DiskDelta) -> dict:
+    return {**asdict(x), "gb_read": x.gb_read, "bandwidth_gbps": x.bandwidth_gbps,
+            "iops": x.iops, "mean_read_bytes": x.mean_read_bytes, "await_ms": x.await_ms}
 
 
 def measure(condition: str, model: str | os.PathLike, argv: list[str], *,
@@ -405,7 +454,9 @@ def measure(condition: str, model: str | os.PathLike, argv: list[str], *,
             timeout: float = 3600.0) -> Measurement:
     """Run one condition end to end, with the cache put in a known state first."""
     model = str(model)
-    device = device_for(model)
+    files = model_files(model)
+    device = device_for(files[0])
+    members = member_devices(device)
     notes: list[str] = []
 
     if cold:
@@ -414,12 +465,14 @@ def measure(condition: str, model: str | os.PathLike, argv: list[str], *,
             notes.append(f"cold requested but {before.fraction:.1%} stayed resident "
                          "after fadvise(DONTNEED); another process holds it")
     else:
-        before = residency(model)
+        before = residency_of(files)
 
     d0 = disk_counters(device)
+    m0 = {m: disk_counters(m) for m in members}
     execution = run_limited(argv, memory_max_bytes=memory_max_bytes, timeout=timeout)
     d1 = disk_counters(device)
-    after = residency(model)
+    m1 = {m: disk_counters(m) for m in members}
+    after = residency_of(files)
 
     if execution.timed_out:
         notes.append(f"killed at the {timeout:.0f}s budget; throughput figures are lower bounds")
@@ -435,7 +488,8 @@ def measure(condition: str, model: str | os.PathLike, argv: list[str], *,
     elif execution.exit_code not in (0, -1):
         notes.append(f"exited {execution.exit_code}; figures below cover only what it did before that")
     return Measurement(condition=condition, model=model, device=device, execution=execution,
-                       disk=d1 - d0, residency_before=before, residency_after=after, notes=notes)
+                       disk=d1 - d0, residency_before=before, residency_after=after, notes=notes,
+                       members={m: m1[m] - m0[m] for m in members})
 
 
 def write_report(measurements: list[Measurement], path: str | os.PathLike) -> None:

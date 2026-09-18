@@ -13,6 +13,7 @@ file.
 
 from __future__ import annotations
 
+import re
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,6 +104,9 @@ class TensorEntry:
     offset: int
     file_offset: int
     nbytes: int
+    #: The file this tensor's bytes are in. A split model has several, and
+    #: ``file_offset`` is meaningless without knowing which one it indexes.
+    path: Path | None = None
 
     @property
     def type_name(self) -> str:
@@ -119,6 +123,17 @@ class GGUFFile:
     data_offset: int
     metadata: dict[str, Any]
     tensors: tuple[TensorEntry, ...]
+    #: Every file the model's bytes are spread over, in ``split.no`` order.
+    #: A single-file model lists just ``path``.
+    shards: tuple[Path, ...] = ()
+
+    @property
+    def files(self) -> tuple[Path, ...]:
+        return self.shards or (self.path,)
+
+    @property
+    def nbytes_on_disk(self) -> int:
+        return sum(f.stat().st_size for f in self.files)
 
     def tensor(self, name: str) -> TensorEntry:
         for t in self.tensors:
@@ -227,6 +242,7 @@ def read_gguf(path: str | Path) -> GGUFFile:
             offset=offset,
             file_offset=data_offset + offset,
             nbytes=tensor_nbytes(type_id, dims),
+            path=path,
         )
         for name, dims, type_id, offset in raw
     )
@@ -237,4 +253,83 @@ def read_gguf(path: str | Path) -> GGUFFile:
         data_offset=data_offset,
         metadata=metadata,
         tensors=tensors,
+        shards=(path,),
+    )
+
+
+# -- split models ---------------------------------------------------------
+
+_SPLIT_NAME = re.compile(r"^(?P<stem>.*)-(?P<no>\d{5})-of-(?P<count>\d{5})\.gguf$")
+
+
+def shard_paths(path: str | Path) -> list[Path]:
+    """Every file of the model ``path`` belongs to, first shard first.
+
+    A file whose ``split.count`` is absent or 1 is the whole model. Otherwise
+    the siblings are derived from the ``-NNNNN-of-MMMMM.gguf`` convention
+    ``gguf-split`` writes, and each one must exist: a model with a shard
+    missing is not a model with fewer layers, it is an unreadable model.
+    """
+    path = Path(path)
+    first = read_gguf(path)
+    count = int(first.metadata.get("split.count", 1) or 1)
+    if count <= 1:
+        return [path]
+    m = _SPLIT_NAME.match(path.name)
+    if not m:
+        raise GGUFError(f"{path.name} says split.count={count} but is not named "
+                        "<stem>-NNNNN-of-MMMMM.gguf, so its siblings cannot be found")
+    if int(m.group("count")) != count:
+        raise GGUFError(f"{path.name} is named as one of {int(m.group('count'))} "
+                        f"but its metadata says {count}")
+    width = len(m.group("no"))
+    paths = [path.with_name(f"{m.group('stem')}-{i + 1:0{width}d}-of-{count:0{width}d}.gguf")
+             for i in range(count)]
+    missing = [p.name for p in paths if not p.exists()]
+    if missing:
+        raise GGUFError(f"split model is missing {len(missing)} of {count} shards: "
+                        + ", ".join(missing))
+    return paths
+
+
+def read_model(path: str | Path) -> GGUFFile:
+    """The directory of a whole model, whether it is one file or many.
+
+    Each shard is read with :func:`read_gguf`, so every tensor's
+    ``file_offset`` is relative to *its own* file and ``path`` says which.
+    The first shard's metadata is the model's — the others carry only their
+    ``split.*`` keys — and the split is checked to be complete and in order
+    before anything is returned: ``split.no`` must run 0..count-1 and
+    ``split.tensors.count`` must equal the tensors actually found.
+    """
+    paths = shard_paths(path)
+    parts = [read_gguf(p) for p in paths]
+    first = parts[0]
+    if len(parts) == 1:
+        return first
+    tensors: list[TensorEntry] = []
+    seen: set[str] = set()
+    for i, part in enumerate(parts):
+        no = part.metadata.get("split.no")
+        if no is None or int(no) != i:
+            raise GGUFError(f"{part.path.name} carries split.no={no}, expected {i}")
+        if int(part.metadata.get("split.count", 0) or 0) != len(parts):
+            raise GGUFError(f"{part.path.name} carries split.count="
+                            f"{part.metadata.get('split.count')}, expected {len(parts)}")
+        for t in part.tensors:
+            if t.name in seen:
+                raise GGUFError(f"tensor {t.name} appears in more than one shard")
+            seen.add(t.name)
+            tensors.append(t)
+    declared = first.metadata.get("split.tensors.count")
+    if declared is not None and int(declared) != len(tensors):
+        raise GGUFError(f"split declares {declared} tensors, shards hold {len(tensors)}")
+    return GGUFFile(
+        path=first.path,
+        version=first.version,
+        alignment=first.alignment,
+        data_offset=first.data_offset,
+        metadata=dict(first.metadata),
+        tensors=tuple(tensors),
+        shards=tuple(paths),
     )

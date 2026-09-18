@@ -93,7 +93,7 @@ def test_a_namespace_with_no_field_list_is_refused(tel):
 
 def test_a_source_that_is_none_is_skipped_not_an_error(tel):
     tel.open_run()
-    s = tel.snapshot({"cache": None, "policy": None})
+    s = tel.snapshot({"cache": None, "sim": None})
     assert s.values == {}
 
 
@@ -176,7 +176,7 @@ def test_a_key_absent_from_one_end_is_skipped_rather_than_assumed_zero(tel):
     tel.open_run()
     tel.snapshot({"cache": Counters(hits=1, misses=0, insertions=0, evictions=0,
                                     bytes_admitted=0, bytes_evicted=0)})
-    tel.snapshot({"policy": Counters(tokens=1, lookups=1, vram_hits=1, ram_hits=0,
+    tel.snapshot({"sim": Counters(tokens=1, lookups=1, vram_hits=1, ram_hits=0,
                                      nvme_reads=0, prefetched=0, prefetch_used=0,
                                      stalls=0, seconds=0.0, prefetch_seconds=0.0,
                                      depth_changes=0)})
@@ -215,7 +215,7 @@ def test_the_real_components_expose_the_fields_the_schema_names():
     from tierinfer.stream import StreamStats
     from tierinfer.vram import VramStats
 
-    for namespace, stats in (("cache", CacheStats()), ("policy", PolicyStats()),
+    for namespace, stats in (("cache", CacheStats()), ("sim", PolicyStats()),
                              ("prefetch", PrefetchStats()), ("storage", StorageStats()),
                              ("stream", StreamStats()), ("vram", VramStats())):
         collect(namespace, stats, STANDARD_FIELDS[namespace])
@@ -226,7 +226,7 @@ def test_two_runs_behind_different_runtimes_share_a_shape(tmp_path):
     for path, runtime in ((a, "llama.cpp"), (b, "simulation")):
         with Telemetry(path, run=runtime) as t:
             t.open_run(runtime=runtime)
-            t.snapshot({"policy": Counters(tokens=1, lookups=360, vram_hits=300,
+            t.snapshot({"sim": Counters(tokens=1, lookups=360, vram_hits=300,
                                            ram_hits=50, nvme_reads=10, prefetched=8,
                                            prefetch_used=5, stalls=10, seconds=0.07,
                                            prefetch_seconds=0.01, depth_changes=0)})

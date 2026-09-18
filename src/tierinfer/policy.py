@@ -1,4 +1,15 @@
-"""One policy across VRAM, RAM and NVMe, adapting while it runs.
+"""One policy across VRAM, RAM and NVMe, adapting while it runs — **as a simulation**.
+
+**What this module is, stated first because the audit found it stated last.**
+`TierPolicy` is a cost model. `on_routing` returns seconds computed from the
+constants in `TierCosts`; it moves no bytes and observes no transfer. Its
+tiers are anything with ``key in tier`` and ``tier.admit(key)`` — which the
+real `ExpertCache` (no ``admit``) and `VramResidency` (``admit`` takes a host
+pointer and a size) are not, so it has only ever run over `SimTier`
+(`benchmarks/policy.py`). `PolicyStats.seconds` and ``prefetch_seconds`` are
+modelled and are exported under the ``sim.`` telemetry namespace, not beside
+observed counters. `benchmarks/POLICY.md` says the same in its last section.
+The runtime policy over real tiers is the loader's job (audit, item 12).
 
 Everything else in this project decides one thing well. The tracker knows
 what has been used, the predictor ranks what is coming, the caches hold what

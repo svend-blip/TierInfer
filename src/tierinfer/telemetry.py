@@ -123,11 +123,17 @@ STANDARD_FIELDS: dict[str, tuple[str, ...]] = {
               "bytes_evicted"),
     "vram": ("hits", "misses", "transfers", "evictions", "bytes_transferred",
              "transfer_seconds", "refused"),
-    "prefetch": ("issued", "used", "cancelled", "stalls", "stalls_avoided",
-                 "bytes_issued", "wasted_bytes", "exact_fallbacks"),
-    "policy": ("tokens", "lookups", "vram_hits", "ram_hits", "nvme_reads",
-               "prefetched", "prefetch_used", "stalls", "seconds",
-               "prefetch_seconds", "depth_changes"),
+    "prefetch": ("issued", "used", "late", "cancelled", "stalls", "stalls_avoided",
+                 "bytes_issued", "wasted_bytes", "exact_fallbacks", "late_wait_seconds",
+                 "timed_out"),
+    #: Counters of the policy *simulator* (`tierinfer.policy`). Its ``seconds``
+    #: are computed from constants, not measured, so the whole component
+    #: reports under ``sim.`` rather than beside observed counters — a reader
+    #: putting two runs in one table must not be able to mistake one for the
+    #: other.
+    "sim": ("tokens", "lookups", "vram_hits", "ram_hits", "nvme_reads",
+            "prefetched", "prefetch_used", "stalls", "seconds",
+            "prefetch_seconds", "depth_changes"),
 }
 
 

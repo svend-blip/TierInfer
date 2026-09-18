@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import errno
 import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
 from .index import ByteRange
 
@@ -64,22 +66,36 @@ class ReadStat:
         return self.nbytes / self.operations if self.operations else 0.0
 
 
+#: Upper edges of the operation-size histogram, in bytes. Power-of-two
+#: buckets from one page to 64 MiB; the last bucket is open-ended.
+SIZE_BUCKETS: tuple[int, ...] = tuple(4096 << i for i in range(15))
+
+
 @dataclass
 class StorageStats:
-    """Running totals for one backend, for telemetry."""
+    """Running totals for one backend, for telemetry.
+
+    Operation sizes are kept as a bounded histogram rather than a list: the
+    first version appended every size to a list, which on a run of a few
+    hundred thousand expert reads is a few hundred thousand integers that
+    nothing ever freed.
+    """
 
     reads: int = 0
     operations: int = 0
     bytes_read: int = 0
     seconds: float = 0.0
-    operation_sizes: list[int] = field(default_factory=list)
+    size_histogram: dict[int, int] = field(default_factory=dict)
 
     def record(self, stat: ReadStat, sizes: list[int]) -> None:
         self.reads += 1
         self.operations += stat.operations
         self.bytes_read += stat.nbytes
         self.seconds += stat.seconds
-        self.operation_sizes.extend(sizes)
+        h = self.size_histogram
+        for n in sizes:
+            edge = next((b for b in SIZE_BUCKETS if n <= b), 0)   # 0 = above the last edge
+            h[edge] = h.get(edge, 0) + 1
 
     @property
     def bytes_per_second(self) -> float:
@@ -91,23 +107,64 @@ class StorageStats:
 
 
 class StorageBackend:
-    """Byte-range reads against one model file, with timing and cache control."""
+    """Byte-range reads against one model's files, with timing and cache control.
 
-    def __init__(self, path: str | Path, *, advise_random: bool = True):
-        self.path = Path(path)
-        self.fd = os.open(self.path, os.O_RDONLY)
+    A model is one file or several — a ``gguf-split`` model is several — and
+    a :class:`ByteRange` names the file it indexes. One descriptor is held
+    per file for the backend's lifetime; a range whose ``path`` is ``None``
+    means the first (or only) file, which keeps single-file callers and
+    hand-built test ranges unchanged.
+    """
+
+    def __init__(self, paths: str | Path | Sequence[str | Path], *,
+                 advise_random: bool = True):
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+        files = [Path(p) for p in paths]
+        if not files:
+            raise ValueError("a backend needs at least one file")
+        self.paths: tuple[Path, ...] = tuple(files)
+        self.path = files[0]
+        self._fds: dict[Path, int] = {}
+        try:
+            for f in files:
+                self._fds[f] = os.open(f, os.O_RDONLY)
+        except OSError:
+            self.close()
+            raise
         self.stats = StorageStats()
         if advise_random:
             # The access pattern is expert-sized jumps, not a sequential scan;
             # saying so stops the kernel reading ahead into weights nobody asked for.
-            self._fadvise(0, 0, POSIX_FADV_RANDOM)
+            for fd in self._fds.values():
+                self._fadvise(fd, 0, 0, POSIX_FADV_RANDOM)
+
+    @classmethod
+    def for_model(cls, gguf, **kw) -> "StorageBackend":
+        """A backend over every file of a :class:`~tierinfer.gguf.GGUFFile`."""
+        return cls(gguf.files, **kw)
 
     # -- lifecycle ------------------------------------------------------
 
+    @property
+    def fd(self) -> int:
+        """The first file's descriptor. Kept for single-file callers."""
+        return self._fds.get(self.path, -1)
+
+    def fd_for(self, r: ByteRange) -> int:
+        """The descriptor for the file this range indexes."""
+        if r.path is None:
+            return self.fd
+        fd = self._fds.get(Path(r.path))
+        if fd is None:
+            raise OSError(f"{r.name} indexes {r.path}, which this backend did not open "
+                          f"(it has {', '.join(p.name for p in self.paths)})")
+        return fd
+
     def close(self) -> None:
-        if self.fd >= 0:
-            os.close(self.fd)
-            self.fd = -1
+        for fd in self._fds.values():
+            os.close(fd)
+        self._fds.clear()
 
     def __enter__(self) -> "StorageBackend":
         return self
@@ -117,23 +174,39 @@ class StorageBackend:
 
     # -- cache control --------------------------------------------------
 
-    def _fadvise(self, offset: int, length: int, advice: int) -> int:
+    def _fadvise(self, fd: int, offset: int, length: int, advice: int) -> int:
+        """``posix_fadvise``, returning its errno rather than swallowing it.
+
+        Zero means the kernel accepted the advice. Anything else is reported
+        to the caller, because an eviction that did not happen turns every
+        "cold" measurement after it into a warm one that says cold.
+        """
         libc = _libc_handle()
         if libc is None:
-            return -1
-        return libc.posix_fadvise(
-            self.fd, ctypes.c_long(offset), ctypes.c_long(length), advice
-        )
+            return errno.ENOSYS
+        return libc.posix_fadvise(fd, ctypes.c_long(offset), ctypes.c_long(length), advice)
 
     def evict(self, ranges: list[ByteRange] | ByteRange) -> None:
-        """Drop these ranges from the page cache, so the next read is a real one."""
+        """Drop these ranges from the page cache, so the next read is a real one.
+
+        Raises ``OSError`` when the kernel refuses, rather than returning as
+        if the pages were gone.
+        """
         for r in _as_list(ranges):
-            self._fadvise(r.file_offset, r.nbytes, POSIX_FADV_DONTNEED)
+            rc = self._fadvise(self.fd_for(r), r.file_offset, r.nbytes, POSIX_FADV_DONTNEED)
+            if rc:
+                raise OSError(rc, f"posix_fadvise(DONTNEED) on {r.name}: {os.strerror(rc)}")
 
     def hint_willneed(self, ranges: list[ByteRange] | ByteRange) -> None:
-        """Ask the kernel to start fetching these. Advisory: it may do nothing."""
+        """Ask the kernel to start fetching these. Advisory: it may do nothing.
+
+        Measured on this project to do nothing under memory pressure
+        (`benchmarks/REAL-ROUTING.md`); kept as the instrument that showed it.
+        """
         for r in _as_list(ranges):
-            self._fadvise(r.file_offset, r.nbytes, POSIX_FADV_WILLNEED)
+            rc = self._fadvise(self.fd_for(r), r.file_offset, r.nbytes, POSIX_FADV_WILLNEED)
+            if rc:
+                raise OSError(rc, f"posix_fadvise(WILLNEED) on {r.name}: {os.strerror(rc)}")
 
     # -- reads ----------------------------------------------------------
 
@@ -141,14 +214,15 @@ class StorageBackend:
         """Read these ranges, one operation each, and time the whole thing."""
         rs = _as_list(ranges)
         sizes = [r.nbytes for r in rs]
+        fds = [self.fd_for(r) for r in rs]
         t0 = time.perf_counter()
-        blobs = [os.pread(self.fd, r.nbytes, r.file_offset) for r in rs]
+        blobs = [os.pread(fd, r.nbytes, r.file_offset) for fd, r in zip(fds, rs)]
         elapsed = time.perf_counter() - t0
-        stat = ReadStat(nbytes=sum(len(b) for b in blobs), seconds=elapsed, operations=len(rs))
-        self.stats.record(stat, sizes)
         for blob, r in zip(blobs, rs):
             if len(blob) != r.nbytes:
                 raise OSError(f"short read on {r.name}: {len(blob)} of {r.nbytes} bytes")
+        stat = ReadStat(nbytes=sum(len(b) for b in blobs), seconds=elapsed, operations=len(rs))
+        self.stats.record(stat, sizes)
         return blobs, stat
 
     def read_paged(self, ranges: list[ByteRange] | ByteRange,
@@ -164,10 +238,11 @@ class StorageBackend:
         total = 0
         t0 = time.perf_counter()
         for r in rs:
+            fd = self.fd_for(r)
             done = 0
             while done < r.nbytes:
                 n = min(page, r.nbytes - done)
-                total += len(os.pread(self.fd, n, r.file_offset + done))
+                total += len(os.pread(fd, n, r.file_offset + done))
                 sizes.append(n)
                 done += n
         elapsed = time.perf_counter() - t0

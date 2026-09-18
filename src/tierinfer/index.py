@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .gguf import GGUFFile, GGUFError, TensorEntry, read_gguf
+from .gguf import GGUFFile, GGUFError, TensorEntry, read_gguf, read_model
 
 _BLOCK = re.compile(r"^blk\.(\d+)\.(.+)$")
 
@@ -40,6 +40,10 @@ class ByteRange:
     name: str
     file_offset: int
     nbytes: int
+    #: Which file ``file_offset`` indexes. ``None`` means the backend's only
+    #: file — the single-file case, and what tests that build ranges by hand
+    #: get. A split model always names the shard.
+    path: Path | None = None
 
     @property
     def end(self) -> int:
@@ -178,6 +182,7 @@ class ModelIndex:
                 name=f"{name}#expert{expert}",
                 file_offset=t.file_offset + expert * slab,
                 nbytes=slab,
+                path=t.path,
             ))
         if not ranges:
             raise GGUFError(f"layer {layer} has no fused expert tensors")
@@ -210,4 +215,5 @@ class ModelIndex:
 
 
 def load(path: str | Path) -> ModelIndex:
-    return ModelIndex(read_gguf(path))
+    """Index a model from any one of its files. A split is read whole."""
+    return ModelIndex(read_model(path))

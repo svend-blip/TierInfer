@@ -77,7 +77,21 @@ That is the unit of transfer the rest of the system is built around: large
 enough that a read is efficient, small enough that 8 per layer is 71 MB
 rather than a gigabyte.
 
-## Not yet implemented
+## The rest — status as of the 2026-09-18 audit
 
-The Tier Manager, caches, tracker, predictor, prefetcher, storage backend,
-telemetry and adapters. `SCOPE.md` carries the order.
+| Module | What it is | Connected to inference? |
+|---|---|---|
+| `storage`, `stream` | `pread`/`preadv` on per-shard descriptors, pooled buffers, worker threads; 3.47× demand paging | no — nothing running a model calls it |
+| `cache` | bounded RAM cache, recency-led (equals LRU on real routing) | no |
+| `vram` | budget derived from the model's metadata, real `cudaMalloc`/`cudaMemcpy` residency | no — no kernel reads the device pointers |
+| `tracker`, `predict` | activation history; four heuristic predictors and a recall@k harness | fed from captured traces |
+| `prefetch` | speculative reads with an exact synchronous fallback; useful / late / stall / waste counted | replayed traces only |
+| `policy` | a **simulation** over the measured tier constants; binds to `SimTier`, not to the real tiers | no |
+| `telemetry`, `autoconfig`, `bench` | schema; host+model derivation; cold cache, ceilings, device counters incl. md members | written by benchmark harnesses |
+| `tools/trace` | routing capture through `cb_eval`, patch-free; strided read; `--cpu-moe`; `--one-by-one` | **this is the only inference this project runs** |
+| adapters | FreeToken: flags in, counters out. FlowRunner: capability schema, no consumer on the FlowRunner side | no |
+
+The missing piece is a loader that hands llama.cpp's `ggml_mul_mat_id` the
+routed expert slabs from TierInfer's buffers instead of from the memory map.
+`docs/AUDIT-2026-09-18.md`, item 12, names the point; `SCOPE.md` goal 6
+carries it as the remaining work.

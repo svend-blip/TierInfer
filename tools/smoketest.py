@@ -77,12 +77,11 @@ def main() -> int:
     print(f"model {a.model}")
     print(f"trace {a.trace}\n")
 
-    from tierinfer.gguf import read_gguf
-    from tierinfer.index import ModelIndex
+    from tierinfer.index import load
 
     index = None
     if a.model.exists():
-        index = ModelIndex(read_gguf(a.model))
+        index = load(a.model)
 
     def need_model():
         if index is None:
@@ -99,14 +98,17 @@ def main() -> int:
     @goal(2, "GGUF layout and expert ranges")
     def _():
         ix = need_model()
-        last = max(ix.gguf.tensors, key=lambda t: t.file_offset + t.nbytes)
-        end = last.file_offset + last.nbytes
-        size = a.model.stat().st_size
-        if end != size:
-            return FAIL, f"last tensor ends at {end}, file is {size}"
+        for shard in ix.gguf.files:
+            mine = [t for t in ix.gguf.tensors if t.path == shard]
+            last = max(mine, key=lambda t: t.file_offset + t.nbytes)
+            end = last.file_offset + last.nbytes
+            size = shard.stat().st_size
+            if end != size:
+                return FAIL, f"{shard.name}: last tensor ends at {end}, file is {size}"
         ref = ix.expert(ix.moe_layers[0], 0)
-        return PASS, (f"{len(ix.gguf.tensors)} tensors, ends exactly at EOF, "
-                      f"expert = {len(ref.ranges)} ranges of {ref.nbytes / MB:.2f} MB")
+        return PASS, (f"{len(ix.gguf.tensors)} tensors in {len(ix.gguf.files)} file(s), "
+                      f"each ends exactly at EOF, expert = {len(ref.ranges)} ranges of "
+                      f"{ref.nbytes / MB:.2f} MB")
 
     # -- 3: baseline measurement primitives -----------------------------
 
@@ -139,7 +141,7 @@ def main() -> int:
                   for l in ix.moe_layers[:2] for e in range(8)]
         flat = [r for _, rs in groups for r in rs]
         slot = max(sum(r.nbytes for r in rs) for _, rs in groups)
-        with StorageBackend(a.model) as b:
+        with StorageBackend.for_model(ix.gguf) as b:
             b.evict(flat)
             serial = hashlib.blake2b(digest_size=16)
             for _, rs in groups:
@@ -260,7 +262,7 @@ def main() -> int:
                 return {99: 1.0}
 
         slot = ix.expert(layer, 0).nbytes
-        with StorageBackend(a.model) as b:
+        with StorageBackend.for_model(ix.gguf) as b:
             with ExpertStreamer(b, BufferPool(slot, 4), workers=2) as s:
                 t = ExpertTracker()
                 p = Prefetcher(s, ExpertCache(8 * slot, t), Wrong(),
@@ -415,7 +417,7 @@ def main() -> int:
             return FAIL, "; ".join(str(f) for f in findings)
         layer = ix.moe_layers[0]
         ranges = lambda k: list(ix.expert(*k).ranges)
-        with StorageBackend(a.model) as b:
+        with StorageBackend.for_model(ix.gguf) as b:
             want = exact_load(b, ranges((layer, 5)))
             stats = GuardStats()
             for broken in (lambda k: None,

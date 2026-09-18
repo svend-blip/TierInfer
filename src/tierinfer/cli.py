@@ -19,6 +19,8 @@ def _report(ix: ModelIndex) -> dict:
     per_expert = ix.expert_nbytes()
     return {
         "model": str(ix.gguf.path),
+        "shards": len(ix.gguf.files),
+        "bytes_on_disk": ix.gguf.nbytes_on_disk,
         "architecture": ix.gguf.architecture,
         "gguf_version": ix.gguf.version,
         "tensors": len(ix.gguf.tensors),
@@ -39,7 +41,8 @@ def _report(ix: ModelIndex) -> dict:
 def _print_text(r: dict) -> None:
     b = r["bytes"]
     print(f"model            {r['model']}")
-    print(f"architecture     {r['architecture']} (GGUF v{r['gguf_version']}, {r['tensors']} tensors)")
+    print(f"architecture     {r['architecture']} (GGUF v{r['gguf_version']}, {r['tensors']} tensors, "
+          f"{r['shards']} file{'s' if r['shards'] != 1 else ''})")
     print(f"layers           {r['layers']}, of which {r['moe_layers']} are MoE")
     if r["experts_per_layer"]:
         print(f"experts          {r['experts_per_layer']} per layer, "

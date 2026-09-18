@@ -1,5 +1,11 @@
 # SCOPE — TierInfer
 
+> The Human's full scope is `docs/SCOPE-ORIGINAL.md`; this file is the
+> working condensation with per-goal status. `docs/SCOPE-ADDENDUM-480B.md`
+> extends it, `docs/AUDIT-2026-09-18.md` measured the status below against
+> the code, and `docs/CHECKPOINTS.md` is the durable trail. Where a goal's
+> status here was rewritten by the audit, the rewrite says so.
+
 ## Purpose
 
 Run models whose weights exceed practical VRAM and RAM by treating NVMe as a
@@ -32,7 +38,10 @@ Each step must be measurable on its own before the next begins.
 
 1. **Repository and foundation.** — *done*
 2. **Model layout indexing.** GGUF directory, tensor classification, expert
-   byte ranges. — *done for `glm4moe`; other architectures untested*
+   byte ranges. — *done for `glm4moe` and, since 2026-09-18, for `qwen3moe`
+   and for split models: a `gguf-split` set is read as one model, every
+   byte range names its shard, and the storage layer holds one descriptor
+   per shard. Before that a six-shard model indexed as its first shard.*
 3. **Reproducible baseline benchmark.** Automate the manual experiment:
    warm cache, cold cache, RAM-constrained, and later TierInfer-enabled, with
    throughput, NVMe bandwidth, read-size distribution, IOPS and residency.
@@ -66,10 +75,18 @@ Each step must be measurable on its own before the next begins.
    are in `traces/`, and `benchmarks/REAL-ROUTING.md` reports what they
    overturn. Residency assist is measured and settled: it cannot be
    done advisorily. WILLNEED is a no-op under a full ceiling and DONTNEED
-   cannot evict pages a live mapping holds, shown end to end and in isolation.
-   The integration has to own the loading path rather than advise around it,
-   which makes `tierinfer.storage` the seam and a llama.cpp loader the
-   remaining work.*
+   cannot evict pages a live mapping holds, shown end to end and in isolation;
+   the assist flags were removed from the tool on 2026-09-18 because they
+   could not do what they were named for.*
+
+   ***Status corrected by the 2026-09-18 audit: observability only. Goal 6 as
+   the original scope words it — real inference while TierInfer controls or
+   assists weight residency, benchmarkable against native mmap — is NOT
+   met.*** *No loader exists; in every inference this project has run, all
+   weight I/O was Linux demand paging. The integration point is
+   `ggml_mul_mat_id` reading expert slabs out of the mapped tensor
+   (`docs/AUDIT-2026-09-18.md`, item 12); owning it is the remaining work,
+   and it is the largest piece left in the project.*
 7. **Async prefetch.** Read-ahead overlapping compute; measure stalls
    eliminated, accuracy, lead time and wasted bandwidth. — *built: the one
    place a guess causes I/O, and the only place the safety rule has teeth —
@@ -83,7 +100,10 @@ Each step must be measurable on its own before the next begins.
    the frequency floor by about 1 point, and the adaptive blend backs whichever
    part is measurably winning. That result is about the code, not the model —
    `evaluate` takes any iterable of routings, so a captured trace scores through
-   the same harness once goal 6 can produce one.*
+   the same harness once goal 6 can produce one. On real GLM routing the
+   adaptive blend beats the frequency floor by 13.9 points at k=16.*
+   ***Audit 2026-09-18: the predictors are heuristic. The trainable prerouter
+   the original scope requires is NOT implemented.***
 9. **VRAM working set.** Explicit GPU residency inside a budget that leaves
    room for KV cache, activations and workspace. — *done and measured
    (`benchmarks/VRAM.md`). The budget is derived from the model's metadata,
@@ -95,15 +115,22 @@ Each step must be measurable on its own before the next begins.
    token's working set the hit rate is not low but zero, which is what
    131k context does.*
 10. **Adaptive tier policy.** One policy over the runtime signals, adapting
-    during inference. — *done and measured (`benchmarks/POLICY.md`). One
-    policy locates every expert across three tiers whose costs are ten times
-    apart, retains on measured activation rather than on prediction, and moves
-    its one free parameter — prefetch depth — on measured stalls against
-    measured waste. Tiering is worth 17x (1 318 ms/token to 75); the dial on
-    top is worth 1%, and the adaptive arm reaches the best fixed depth without
-    being told which it is. A 3.8% miss rate costs two thirds of the time,
-    because the tiers are tenfold apart.*
-11. **FreeToken adapter.** — *done. FreeToken already tiers experts itself
+    during inference. — ***Status corrected by the 2026-09-18 audit:
+    SIMULATED, not done.*** *`tierinfer.policy` is a cost model over the
+    measured tier constants, applied to real routing (`benchmarks/POLICY.md`,
+    whose last section already said so). It has never run over the real
+    tiers: it binds to a `SimTier` interface that neither `ExpertCache` nor
+    `VramResidency` implements, and the seconds it reports are computed, not
+    observed — they are exported under the `sim.` telemetry namespace for
+    that reason. What the simulation says: tiering is worth 17x (1 318
+    ms/token to 75), the dial on top is worth 1%, the adaptive arm reaches
+    the best fixed depth unaided, and a 3.8% miss rate costs two thirds of
+    the time. A policy that moves bytes is the loader's work (goal 6).*
+11. **FreeToken adapter.** — ***partial (audit 2026-09-18): configuration in
+    and counters out, verified against FreeToken's own argument parser; the
+    NVMe tier beneath FreeToken, the intake of its routing and the
+    real-inference benchmark the original scope asks for do not exist.***
+    *FreeToken already tiers experts itself
     and owns its loading path, and goal 6 measured what happens to an adapter
     that tries to manage residency in a runtime that owns its own: nothing,
     slowly. So the adapter does the two things that are left. Configuration
@@ -114,7 +141,9 @@ Each step must be measurable on its own before the next begins.
     namespace, with an unreported counter coming back absent rather than
     zero. Standard-library HTTP only.*
 12. **FlowRunner capability.** Declarative configuration, telemetry out.
-    — *done. A flow declares what the work needs — a model, a context, and
+    — ***schema done, DISCONNECTED (audit 2026-09-18): nothing in FlowRunner
+    reads it, so a flow cannot select TierInfer today.*** *A flow declares
+    what the work needs — a model, a context, and
     optionally the residency share below which the step should be refused
     rather than run slowly and believed — and is deliberately unable to
     declare a VRAM size, because that belongs to whatever machine the flow

@@ -32,6 +32,7 @@ lost — not by someone deciding to remove it.
 
 from __future__ import annotations
 
+import ast
 import inspect
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Sequence
@@ -139,12 +140,33 @@ class AuditFinding:
         return f"{self.module} speculates but has no reachable {self.missing!r}"
 
 
+def _bound_names(source: str) -> set[str]:
+    """Names a module defines, assigns or reaches for — not words it uses.
+
+    A function it defines, an attribute it reads or writes, a name it
+    calls. Docstrings and comments contribute nothing, which is the point:
+    the first version of this searched the text, and a fallback that had
+    been deleted would have passed as long as a comment still named it.
+    """
+    tree = ast.parse(source)
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        elif isinstance(node, ast.Name):
+            names.add(node.id)
+    return names
+
+
 def audit(modules: Iterable[str] | None = None) -> list[AuditFinding]:
     """Report speculative modules with no reachable exact path.
 
-    Deliberately shallow: it reads source, it does not prove anything. What
-    it catches is a fallback removed or forgotten, which is how this
-    invariant would actually be lost.
+    Shallow by design — it checks that each required name is *bound or
+    called* in the module's code, not that the code is right. What it
+    catches is a fallback removed or forgotten, which is how this invariant
+    would actually be lost.
     """
     import importlib
 
@@ -159,7 +181,8 @@ def audit(modules: Iterable[str] | None = None) -> list[AuditFinding]:
         except (ImportError, OSError) as e:
             findings.append(AuditFinding(name, f"readable source ({e})"))
             continue
+        bound = _bound_names(source)
         for token in expected:
-            if token not in source:
+            if token not in bound:
                 findings.append(AuditFinding(name, token))
     return findings
