@@ -1,0 +1,44 @@
+tierinfer: start the runtime with
+  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK=/tmp/tierinfer-494715.sock TIERINFER_FILES=/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00004-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00005-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf
+tierinfer-loader: listening on /tmp/tierinfer-494715.sock; RAM tier 150.0 GB (5263 experts), 8 fault workers, prefetch depth 0
+tierinfer-loader: pid 505167: control channel open
+tierinfer-loader: pid 505167: eviction channel open
+tierinfer-loader: pid 505167: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (46.54 GB at 0x74babe56b000), 4897 regions
+tierinfer-loader: pid 505167: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf (46.35 GB at 0x74af27e12000), 5382 regions
+tierinfer-loader: pid 505167: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf (45.51 GB at 0x74a3bf919000), 5212 regions
+tierinfer-loader: pid 505167: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00004-of-00006.gguf (45.59 GB at 0x749859ca6000), 5217 regions
+tierinfer-loader: pid 505167: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00005-of-00006.gguf (46.31 GB at 0x748cc62b9000), 5379 regions
+tierinfer-loader: pid 505167: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (39.84 GB at 0x7482d042f000), 4234 regions
+tierinfer-loader: pid 505167: unmapped [0, 771723264) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (0.72 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [49927524352, 49973551104) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (0.04 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [0, 46014464) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf (0.04 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [49675268096, 49768923136) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf (0.09 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [0, 4096) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf (0.00 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [48858533888, 48862486528) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf (0.00 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [0, 8192) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00004-of-00006.gguf (0.00 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [0, 8192) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00005-of-00006.gguf (0.00 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [0, 4096) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.00 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [32794058752, 42780364800) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (9.30 GB); 320 experts gone, 320 of them were resident
+tierinfer-loader: pid 505167: unmapped [41706627072, 41737326592) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.03 GB); 320 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [42777513984, 42780364800) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.00 GB); 320 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [39422074880, 39455625216) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.03 GB); 320 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [511082496, 531189760) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (0.02 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [564744192, 578187264) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (0.01 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [38918758400, 38952308736) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.03 GB); 320 experts gone, 0 of them were resident
+tierinfer-loader: token 1: hit 0.0% (0/496) faults 18747 copied 30.2 GB evicted 0 prefetch 0/0/0/0 resident 1018 (20.7 GB)
+tierinfer-loader: token 2: hit 3.8% (222/5818) faults 24257 copied 169.7 GB evicted 234 prefetch 0/0/4/0 resident 6053 (150.0 GB)
+tierinfer-loader: token 3: hit 10.6% (670/6314) faults 26110 copied 170.6 GB evicted 266 prefetch 0/0/5/0 resident 6053 (150.0 GB)
+tierinfer-loader: token 20: hit 56.7% (8365/14746) faults 50008 copied 183.2 GB evicted 704 prefetch 0/0/11/0 resident 6080 (150.0 GB)
+tierinfer-loader: pid 505167: unmapped [39455625216, 41737326592) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (2.12 GB); 320 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [41737326592, 42777513984) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.97 GB); 320 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [771723264, 49927524352) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (45.78 GB); 1600 experts gone, 763 of them were resident
+tierinfer-loader: pid 505167: unmapped [49973551104, 49973555200) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (0.00 GB); 1600 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [46014464, 49675268096) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf (46.22 GB); 1760 experts gone, 1127 of them were resident
+tierinfer-loader: pid 505167: unmapped [49768923136, 49768927232) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf (0.00 GB); 1760 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [4096, 48858533888) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf (45.50 GB); 1760 experts gone, 1111 of them were resident
+tierinfer-loader: pid 505167: unmapped [48862486528, 48862490624) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf (0.00 GB); 1760 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: unmapped [8192, 48952193024) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00004-of-00006.gguf (45.59 GB); 1920 experts gone, 968 of them were resident
+tierinfer-loader: pid 505167: unmapped [8192, 49721298944) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00005-of-00006.gguf (46.31 GB); 1920 experts gone, 1005 of them were resident
+tierinfer-loader: pid 505167: unmapped [4096, 32794058752) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (30.54 GB); 1440 experts gone, 557 of them were resident
+tierinfer-loader: pid 505167: unmapped [42780364800, 42780368896) of Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (0.00 GB); 1440 experts gone, 0 of them were resident
+tierinfer-loader: pid 505167: control channel closed
