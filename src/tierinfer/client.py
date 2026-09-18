@@ -112,6 +112,30 @@ class _Session:
         with self.lock:
             self.ctl.sendall((line + "\n").encode())
 
+    def route(self, layer: int, expert_ids, *, after: bool = False) -> None:
+        """What the router chose for this layer, this step. ``expert_ids``: one
+        row of ids (a token) or rows (a batch); negative ids are skipped (a
+        hybrid split marks the other side's routes -1).
+
+        ``after=True`` says the step has already run — the runtime could only
+        read the ids back afterwards (CUDA-graph replay leaves Python out of
+        the step). The server then learns the routing and the token boundary
+        but scores hits by whether the expert had to be *faulted in* during
+        the step, not by whether it is resident now (it always is, by then).
+        """
+        rows = expert_ids
+        if hasattr(rows, "tolist"):
+            rows = rows.tolist()
+        if rows and not isinstance(rows[0], (list, tuple)):
+            rows = [rows]
+        rows = [[int(e) for e in row if int(e) >= 0] for row in rows]
+        rows = [r for r in rows if r]
+        if not rows:
+            return
+        body = ";".join(",".join(str(e) for e in row) for row in rows)
+        verb = "ROUTED" if after else "ROUTE"
+        self.say(f"{verb} {layer} {len(rows)} {len(rows[0])} {body}")
+
     def _owner(self, addr: int, n: int) -> "TieredRegion | None":
         for base, r in self.regions.items():
             if base <= addr and addr + n <= base + r.alen and not r.closed:
@@ -189,14 +213,9 @@ class TieredRegion:
     def memoryview(self) -> memoryview:
         return memoryview(self.buffer).cast("B")
 
-    def route(self, layer: int, expert_ids, n_tokens: int = 1) -> None:
-        """Tell the server what the router chose for this layer, this step.
-        ``expert_ids``: one row of ids (a token) or rows of ids (a batch)."""
-        rows = expert_ids
-        if rows and not isinstance(rows[0], (list, tuple)):
-            rows = [rows]
-        body = ";".join(",".join(str(int(e)) for e in row) for row in rows)
-        self.session.say(f"ROUTE {layer} {len(rows)} {len(rows[0]) if rows else 0} {body}")
+    def route(self, layer: int, expert_ids, *, after: bool = False) -> None:
+        """See ``_Session.route``."""
+        self.session.route(layer, expert_ids, after=after)
 
     def close(self) -> None:
         if self.closed:

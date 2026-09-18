@@ -127,12 +127,40 @@ def _serve(args) -> int:
     from .autoconfig import configure
     from .loader import LoaderServer
     from .telemetry import Telemetry
+    from pathlib import Path as _P
+    ftw = None
     try:
-        ix = load(args.model)
-    except (GGUFError, OSError) as exc:
+        if _P(args.model).is_dir() and (_P(args.model) / "freetoken_weight.json").exists():
+            from .ftw import FTWIndex
+            ftw = FTWIndex(args.model)
+            ix = None
+        else:
+            ix = load(args.model)
+    except (GGUFError, OSError, ValueError) as exc:
         print(f"tierinfer: {exc}", file=sys.stderr)
         return 1
     depth, workers = args.depth, args.workers
+    if ftw is not None:
+        # FreeToken's checkpoint: the runtime speaks the protocol itself (tierinfer.client)
+        if args.capability:
+            print("tierinfer: --capability is resolved against a GGUF index; not for an FTW checkpoint", file=sys.stderr)
+            return 1
+        ram = int(args.ram_gb * GB)
+        if ram <= 0:
+            print("tierinfer: give --ram-gb for an FTW checkpoint (no autoconfig for FreeToken banks yet)", file=sys.stderr)
+            return 1
+        print("tierinfer: serving FreeToken banks; start FreeToken with\n"
+              f"  TIERINFER_SOCK={args.sock} (and --moe-cpu-layers for the tiered layers)", file=sys.stderr, flush=True)
+        tel = Telemetry(args.telemetry) if args.telemetry else None
+        server = LoaderServer(ftw, ram_bytes=ram, workers=workers, depth=depth, telemetry=tel,
+                              verbose=not args.quiet, drop_page_cache=not args.keep_page_cache)
+        try:
+            server.serve(args.sock)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.close()
+        return 0
     if args.capability:
         from .adapters.flowrunner import Capability, CapabilityError, resolve
         try:

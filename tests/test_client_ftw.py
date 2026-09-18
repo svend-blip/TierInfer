@@ -42,6 +42,9 @@ for step in plan:
     elif step[0] == "route":
         _, tag, layer, ids = step
         regions[tag].route(layer, ids)
+    elif step[0] == "routed":
+        _, tag, layer, ids = step
+        regions[tag].route(layer, ids, after=True)
     elif step[0] == "sleep":
         import time; time.sleep(step[1])
     elif step[0] == "close":
@@ -141,5 +144,33 @@ def test_a_tier_smaller_than_the_layer_evicts_and_rereads_correctly(ftw):
         assert server.stats.evictions >= 2, server.stats
         assert res["evictions"] >= 2 and res["refused"] == 0, res
         assert len(server.cache) <= 2
+    finally:
+        server.close()
+
+
+def test_routing_reported_after_the_step_scores_hits_by_faults(ftw):
+    """A CUDA-graph runtime can only read the ids back after the step. ROUTED
+    then means: a miss is an expert that had to be faulted in during this
+    token; the same routing next token, nothing faulted, is all hits."""
+    ix, data = ftw
+    sock = _sock()
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, verbose=False,
+                          drop_page_cache=False, floor_chunk=4096)
+    _start(server, sock)
+    try:
+        gu = ix.banks[0]["gate_up_packed"]
+        row_gu = gu.nbytes // EXPERTS
+        plan = [["map", "gu0", gu.nbytes, gu.global_off]]
+        plan += [["read", "gu0", 0, 16], ["read", "gu0", row_gu, 16], ["sleep", 0.1]]   # experts 0 and 1 faulted in
+        plan += [["routed", "gu0", 0, [0, 1]], ["routed", "gu0", 1, [0, 1]]]            # step 1, reported afterwards
+        plan += [["read", "gu0", 0, 16], ["read", "gu0", row_gu, 16], ["sleep", 0.1]]   # resident: no faults
+        plan += [["routed", "gu0", 0, [0, 1]], ["routed", "gu0", 1, [0, 1]], ["sleep", 0.1]]   # step 2
+        plan += [["close", "gu0"]]
+        res, err = _child(sock, plan)
+        s = server.stats
+        # step 1: layer 0's two experts were faulted this token -> misses; layer 1 never touched -> "hits" by
+        # the rule (not faulted) — a runtime that routes to unmapped layers is not what this measures
+        assert s.tokens >= 1, s
+        assert s.misses == 2 and s.hits == 6, s
     finally:
         server.close()

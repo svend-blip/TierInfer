@@ -541,7 +541,8 @@ class LoaderServer:
         self._evict_conns: dict[int, socket.socket] = {}       # pid -> evict socket
         self._lock = threading.RLock()
         self._serving: dict[object, threading.Event] = {}      # key -> done event
-        self._prefetched: set = set()                          # keys materialised by prefetch, not yet routed
+        self._prefetched: set = set()
+        self._token_faulted: set = set()      # experts faulted in since the last token boundary                          # keys materialised by prefetch, not yet routed
         self._floor_done: set = set()                          # (path, chunk index)
         self._repeats: dict[int, int] = {}                     # page offset -> consecutive faults seen
         self._resident_refaults: dict[object, int] = {}        # key -> faults while already resident
@@ -638,6 +639,8 @@ class LoaderServer:
                     self._on_map(conn, pid, line, fds)
                 elif line.startswith("ROUTE "):
                     self._on_route(line)
+                elif line.startswith("ROUTED "):
+                    self._on_route(line, after=True)
                 elif line.startswith("UNMAP "):
                     self._on_unmap(pid, line)
         finally:
@@ -820,6 +823,8 @@ class LoaderServer:
                     nbytes += r.end - r.start
             with self._lock:
                 admitted = self.cache.put(key, None, nbytes)
+                if why == "fault":
+                    self._token_faulted.add(key)
                 if why == "prefetch":
                     self._prefetched.add(key)
                 if not admitted:
@@ -1071,8 +1076,11 @@ class LoaderServer:
 
     # -- routing in -----------------------------------------------------------
 
-    def _on_route(self, line: str) -> None:
-        # ROUTE <layer> <n_tokens> <n_used> e,e;e,e
+    def _on_route(self, line: str, *, after: bool = False) -> None:
+        # ROUTE <layer> <n_tokens> <n_used> e,e;e,e   — before the layer runs (llama.cpp's cb_eval)
+        # ROUTED …                                   — after the step ran (a CUDA-graph runtime
+        #                                              reads the ids back afterwards); a hit is
+        #                                              then "was not faulted in during this token"
         head, _, body = line.partition(" ")
         parts = line.split(" ", 4)
         layer, n_tokens, n_used = int(parts[1]), int(parts[2]), int(parts[3])
@@ -1084,6 +1092,18 @@ class LoaderServer:
         with self._lock:
             for key in keys:
                 self.stats.routed += 1
+                if after:
+                    if key in self._token_faulted:
+                        self.stats.misses += 1
+                        self.cache.stats.misses += 1
+                    else:
+                        self.stats.hits += 1
+                        if key in self._prefetched:
+                            self._prefetched.discard(key)
+                            self.stats.prefetch_useful += 1
+                    if key in self.cache:
+                        self.cache.get(key)
+                    continue
                 if key in self.cache:
                     self.stats.hits += 1
                     self.cache.get(key)
@@ -1192,6 +1212,8 @@ class LoaderServer:
                 ev.set()
 
     def _end_token(self) -> None:
+        with self._lock:
+            self._token_faulted = set()
         if self._token_keys:
             self.tracker.record(self._token_keys)
             self.tracker.begin_token()
