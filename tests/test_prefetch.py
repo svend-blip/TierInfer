@@ -363,14 +363,29 @@ def test_a_wait_timeout_falls_back_to_the_exact_path(modelfile):
         assert p.orphans == 0 and s.pool.in_use == 0
 
 
-def test_the_cache_hears_what_each_expert_cost_to_load(modelfile):
+def test_the_cache_is_not_fed_queueing_noise_as_a_reload_cost(modelfile):
+    """Per-load read time under concurrency is mostly waiting for the other
+    loads; feeding it to the value function made the 480B cache evict by
+    noise (87.6 % -> 84.1 % hit rate). The tracker's load record stays for
+    callers with a real per-expert cost; the prefetcher does not invent one."""
     b, s, t, p = _rig(modelfile, _Fixed([0]), depth=1)
     with b, s:
         p.before_layer(0, {})
-        p.on_routing(0, [0, 5])         # 0 prefetched, 5 an exact read
+        p.on_routing(0, [0, 5])
         for key in ((0, 0), (0, 5)):
-            st = t.stats[key]
-            assert st.loads == 1 and st.load_seconds > 0
+            assert key in p.cache
+            assert t.stats.get(key) is None or t.stats[key].loads == 0
+
+
+def test_demand_batching_can_be_switched_off(modelfile):
+    b, s, t, p = _rig(modelfile, _Fixed([]), depth=0)
+    p.batch_demand = False
+    raw = modelfile.read_bytes()
+    with b, s:
+        out = p.on_routing(1, [0, 1, 2])
+        assert all(out[(1, e)] == raw[(EXPERTS + e) * EXPERT:(EXPERTS + e + 1) * EXPERT] for e in range(3))
+        assert p.stats.stalls == 3 and p.stats.exact_fallbacks == 3 and p.stats.demand_batched == 0
+        assert s.stats.submitted == 0
 
 
 def test_the_cache_counts_the_misses_the_prefetcher_serves_around_it(modelfile):

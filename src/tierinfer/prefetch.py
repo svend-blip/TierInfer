@@ -111,9 +111,16 @@ class Prefetcher:
                  predictor: Predictor,
                  ranges_for: Callable[[ExpertKey], Sequence[ByteRange]],
                  *, tracker: ExpertTracker | None = None, depth: int = 16,
-                 wait_timeout: float = 120.0) -> None:
+                 wait_timeout: float = 120.0, batch_demand: bool = True) -> None:
         self.streamer = streamer
         self.wait_timeout = wait_timeout
+        #: Read a layer's routed misses through the streamer together (True)
+        #: or one synchronous exact read at a time (False). Which is faster is
+        #: a property of the device: 3.47x on the reference NVMe
+        #: (STREAMING.md), and measured *slower* on the USB RAID the 480B
+        #: sits on, where eight 30 MB reads in flight only queue behind each
+        #: other. Measured, not assumed — so it is a switch, not a rule.
+        self.batch_demand = batch_demand
         self.cache = cache
         self.predictor = predictor
         self.ranges_for = ranges_for
@@ -208,6 +215,9 @@ class Prefetcher:
             # replay measured the difference this makes: 61 misses a token
             # at 22 ms each, serialised, was two thirds of the token.
             self.stats.stalls += 1
+            if not self.batch_demand:
+                out[key] = self._exact_read(key)
+                continue
             ranges = list(self.ranges_for(key))     # raising here propagates: routed, not speculative
             try:
                 demand.append((key, self.streamer.submit(key, ranges)))
@@ -286,11 +296,16 @@ class Prefetcher:
 
     def _admit(self, key: ExpertKey, data: bytes, load_seconds: float = 0.0) -> None:
         # The cache's value function has a reload-cost term (SCOPE 7.3,
-        # "transfer cost"); until this call existed nothing fed it and the
-        # term was a constant. The streamer's own per-load read time is the
-        # measurement.
-        if self.tracker and load_seconds > 0:
-            self.tracker.record_load(key, load_seconds)
+        # "transfer cost"). For one day this fed it the streamer's per-load
+        # read time, and the 480B replay measured what that does: under
+        # concurrent reads a load's time is mostly *queueing*, so identical
+        # experts got costs apart by a factor of ten by luck of the queue,
+        # the recency-led policy started evicting by that noise, and the hit
+        # rate fell from 87.6 % to 84.1 % — 0.7 GB more read per token. A
+        # reload cost has to be a property of the expert (its size, its
+        # tier), not of the moment it happened to be read. Until such a
+        # figure exists the term stays constant, and the measured time is
+        # kept on the load itself for telemetry.
         self.cache.put(key, data, len(data))
 
     def drop_unused(self) -> int:

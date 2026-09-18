@@ -152,6 +152,9 @@ def main() -> int:
     ap.add_argument("--inject", choices=["none", "bad-predictor", "fail-reads", "tiny-pool",
                                          "tiny-vram", "missing-range"], default="none")
     ap.add_argument("--snapshot-every", type=int, default=10, help="tokens between telemetry snapshots")
+    ap.add_argument("--no-batch-demand", action="store_true",
+                    help="read a layer's routed misses one synchronous pread at a time instead of "
+                         "together through the streamer")
     a = ap.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
@@ -216,7 +219,8 @@ def main() -> int:
             raise GGUFError(f"injected: expert {key} cannot be resolved to byte ranges")
         return list(ix.expert(*key).ranges)
 
-    pf = Prefetcher(streamer, cache, predictor, ranges_for, tracker=tracker, depth=a.depth)
+    pf = Prefetcher(streamer, cache, predictor, ranges_for, tracker=tracker, depth=a.depth,
+                    batch_demand=not a.no_batch_demand)
     for r in warm_rows:
         predictor.observe(r.as_mapping())
 
@@ -254,6 +258,7 @@ def main() -> int:
                  floor_bytes=floor, workers=a.workers, pool_slots=pool_slots,
                  vram_slots=(vram.slots if vram is not None else 0), attn_ms=a.attn_ms, ffn_ms=a.ffn_ms,
                  drop_after_read=a.drop_after_read, cold=a.cold, inject=a.inject,
+                 batch_demand=not a.no_batch_demand,
                  device=device, members=",".join(members),
                  residency_before=round(res0.fraction, 4))
 
@@ -388,7 +393,8 @@ def main() -> int:
         "config": {"ram_bytes": ram_bytes, "ram_slots": ram_slots, "depth": a.depth,
                    "workers": a.workers, "pool_slots": pool_slots, "attn_ms": a.attn_ms,
                    "ffn_ms": a.ffn_ms, "drop_after_read": a.drop_after_read, "cold": a.cold,
-                   "inject": a.inject, "vram_slots": vram.slots if vram is not None else 0,
+                   "inject": a.inject, "batch_demand": not a.no_batch_demand,
+                   "vram_slots": vram.slots if vram is not None else 0,
                    "expert_bytes": expert_bytes, "experts_per_token":
                    ix.expert_used_count * len(ix.moe_layers)},
         "per_token": {"wall_ms_median": med("wall_ms"),
