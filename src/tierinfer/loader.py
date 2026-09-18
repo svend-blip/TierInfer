@@ -51,10 +51,12 @@ import bisect
 import ctypes
 import ctypes.util
 import errno
+import faulthandler
 import fcntl
 import mmap
 import os
 import select
+import signal
 import socket
 import struct
 import sys
@@ -81,6 +83,7 @@ MB = 1024 ** 2
 UFFD_API = 0xAA
 _IOC = lambda d, t, n, s: (d << 30) | (s << 16) | (t << 8) | n  # noqa: E731
 UFFDIO_COPY = _IOC(3, UFFD_API, 0x03, 40)        # struct uffdio_copy {dst, src, len, mode, copy}
+UFFDIO_WAKE = _IOC(2, UFFD_API, 0x02, 16)        # struct uffdio_range {start, len}
 UFFD_EVENT_PAGEFAULT = 0x12
 _MSG = 32                                          # sizeof(struct uffd_msg)
 
@@ -214,6 +217,7 @@ class LoaderStats:
     tokens: int = 0
     read_retries: int = 0
     copy_eagain: int = 0
+    wakes: int = 0
 
     @property
     def hit_rate(self) -> float:
@@ -258,6 +262,11 @@ class LoaderServer:
         self._token_keys: set = set()
         self._token_started = time.perf_counter()
         self._token_stats = None
+        self.debug = bool(os.environ.get("TIERINFER_DEBUG"))
+        try:
+            faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
+        except (AttributeError, ValueError, RuntimeError):
+            pass
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -383,11 +392,16 @@ class LoaderServer:
             for off in range(0, len(data) - _MSG + 1, _MSG):
                 event = data[off]
                 if event != UFFD_EVENT_PAGEFAULT:
+                    self._say(f"uffd event {event:#x} ignored")
                     continue
-                _flags, addr = struct.unpack_from("<QQ", data, off + 8)
-                self._fault(addr)
+                flags, addr = struct.unpack_from("<QQ", data, off + 8)
+                try:
+                    self._fault(addr, flags, uffd)
+                except Exception as e:        # noqa: BLE001 — a fault left unanswered hangs the client
+                    self._say(f"FAULT AT {addr:#x} NOT SERVED: {type(e).__name__}: {e}")
+                    raise
 
-    def _fault(self, addr: int) -> None:
+    def _fault(self, addr: int, flags: int = 0, uffd: int = -1) -> None:
         m = self._mapping_for(addr)
         if m is None:
             self._say(f"fault at {addr:#x} outside every mapping — cannot serve")
@@ -395,17 +409,32 @@ class LoaderServer:
         offset = (addr - m.base) & ~(PAGE - 1)
         region = m.layout.owner_of_page(offset)
         self.stats.faults += 1
+        if self.debug:
+            self._say(f"fault {addr:#x} flags {flags:#x} off {offset} -> {region.key if region else None}")
         if region is None:
             # Padding between tensors, or the tail past EOF: the file's bytes
             # there (or zeros past its end) — never anything else.
             self._copy_pages(m, offset, offset + PAGE, lambda a, b: self._file_bytes(m, a, b))
-            return
-        if region.key[0] == "floor":
+        elif region.key[0] == "floor":
             self.stats.faults_floor += 1
             self._serve_floor(m, offset)
         else:
             self.stats.faults_expert += 1
             self._serve_expert(m, region.key, why="fault")
+        # Wake the faulting page explicitly. A copy wakes the range it copied;
+        # a page found already present is not copied and so wakes nobody, and
+        # a thread that faulted on it in the window between its fault and the
+        # copy that made it present would otherwise wait forever.
+        self._wake(m, offset, offset + PAGE)
+
+    def _wake(self, m: Mapping, a: int, b: int) -> None:
+        req = struct.pack("<QQ", m.base + a, b - a)
+        try:
+            fcntl.ioctl(m.uffd, UFFDIO_WAKE, req)
+            self.stats.wakes += 1
+        except OSError as e:
+            if e.errno != errno.ENOENT:
+                self._say(f"UFFDIO_WAKE {m.base + a:#x}: {e}")
 
     def _mapping_for(self, addr: int) -> Mapping | None:
         for m in self.mappings:
@@ -520,6 +549,7 @@ class LoaderServer:
         src0 = ctypes.addressof(buf)
         cur = a
         t0 = time.perf_counter()
+        skipped = 0
         while cur < b:
             req = bytearray(struct.pack("<QQQQq", m.base + cur, src0 + (cur - a), b - cur, 0, 0))
             try:
@@ -532,6 +562,7 @@ class LoaderServer:
                     cur += done
                 elif e.errno == errno.EEXIST:
                     cur += PAGE
+                    skipped += 1
                 elif e.errno == errno.EAGAIN:
                     # the client's address space is changing under us (an
                     # mmap/munmap in flight); back off briefly and retry
@@ -547,6 +578,9 @@ class LoaderServer:
                     raise LoaderError(f"UFFDIO_COPY at {m.base + cur:#x}: {e}") from e
         self.stats.copy_seconds += time.perf_counter() - t0
         self.stats.bytes_copied += b - a
+        if self.debug:
+            self._say(f"copied [{a}, {b}) {b - a} bytes, {skipped} pages already present, "
+                      f"{(time.perf_counter() - t0) * 1000:.1f} ms")
 
     # -- eviction -------------------------------------------------------------
 
