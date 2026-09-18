@@ -1,0 +1,85 @@
+tierinfer: serving FreeToken banks; start FreeToken with
+  TIERINFER_SOCK=/tmp/tierinfer-ft-527624.sock (and --moe-cpu-layers for the tiered layers)
+tierinfer-loader: listening on /tmp/tierinfer-ft-527624.sock; RAM tier 8.0 GB (3098 experts), 8 fault workers, prefetch depth 0
+tierinfer-loader: pid 527772: control channel open
+tierinfer-loader: pid 527772: eviction channel open
+tierinfer-loader: pid 527772: serving gate_up_packed#L00000 (0.78 GB at 0x77ae62000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00004 (0.78 GB at 0x77ad9a000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00008 (0.78 GB at 0x77acd2000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00012 (0.78 GB at 0x77ac0a000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00016 (0.78 GB at 0x77ab42000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00020 (0.78 GB at 0x77aa7a000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00024 (0.78 GB at 0x77a9b2000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00028 (0.78 GB at 0x77a8ea000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00032 (0.78 GB at 0x77a822000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00036 (0.78 GB at 0x77a75a000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00040 (0.78 GB at 0x77a692000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_packed#L00044 (0.78 GB at 0x77a5ca000000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00000 (0.10 GB at 0x77a52dc00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00004 (0.10 GB at 0x77a514c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00008 (0.10 GB at 0x77a4fbc00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00012 (0.10 GB at 0x77a4e2c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00016 (0.10 GB at 0x77a4c9c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00020 (0.10 GB at 0x77a4b0c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00024 (0.10 GB at 0x77a497c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00028 (0.10 GB at 0x77a47ec00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00032 (0.10 GB at 0x77a465c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00036 (0.10 GB at 0x77a44cc00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00040 (0.10 GB at 0x77a433c00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_scale#L00044 (0.10 GB at 0x77a41ac00000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00000 (0.00 GB at 0x77af2c0e4000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00004 (0.00 GB at 0x77aeef0f9000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00008 (0.00 GB at 0x77aeec3f4000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00012 (0.00 GB at 0x77aeda6b5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00016 (0.00 GB at 0x77aeda1b5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00020 (0.00 GB at 0x77aed9cb5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00024 (0.00 GB at 0x77aed97b5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00028 (0.00 GB at 0x77aed92b5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00032 (0.00 GB at 0x77aed8db5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00036 (0.00 GB at 0x77aed88b5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00040 (0.00 GB at 0x77aed83b5000), 512 regions
+tierinfer-loader: pid 527772: serving gate_up_global#L00044 (0.00 GB at 0x77ae9bd80000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00000 (0.39 GB at 0x77a3ef000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00004 (0.39 GB at 0x77a38b000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00008 (0.39 GB at 0x77a327000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00012 (0.39 GB at 0x77a2c3000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00016 (0.39 GB at 0x77a25f000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00020 (0.39 GB at 0x77a1fb000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00024 (0.39 GB at 0x77a197000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00028 (0.39 GB at 0x77a133000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00032 (0.39 GB at 0x77a0cf000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00036 (0.39 GB at 0x77a06b000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00040 (0.39 GB at 0x77a007000000), 512 regions
+tierinfer-loader: pid 527772: serving down_packed#L00044 (0.39 GB at 0x779fa3000000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00000 (0.05 GB at 0x77ae98600000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00004 (0.05 GB at 0x779f4b800000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00008 (0.05 GB at 0x779f3f000000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00012 (0.05 GB at 0x779f32800000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00016 (0.05 GB at 0x779f26000000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00020 (0.05 GB at 0x779f19800000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00024 (0.05 GB at 0x779f0d000000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00028 (0.05 GB at 0x779f00800000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00032 (0.05 GB at 0x779ef4000000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00036 (0.05 GB at 0x779ee7800000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00040 (0.05 GB at 0x779edb000000), 512 regions
+tierinfer-loader: pid 527772: serving down_scale#L00044 (0.05 GB at 0x779ece800000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00000 (0.00 GB at 0x77ae98380000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00004 (0.00 GB at 0x779ec4a80000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00008 (0.00 GB at 0x779ec4080000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00012 (0.00 GB at 0x779ec3680000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00016 (0.00 GB at 0x779ec2c80000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00020 (0.00 GB at 0x779ec2280000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00024 (0.00 GB at 0x779ec1880000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00028 (0.00 GB at 0x779ec0e80000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00032 (0.00 GB at 0x779ec0480000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00036 (0.00 GB at 0x779ebfa80000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00040 (0.00 GB at 0x779ebf080000), 512 regions
+tierinfer-loader: pid 527772: serving down_global#L00044 (0.00 GB at 0x779ebe680000), 512 regions
+tierinfer-loader: token 1: hit 90.8% (109/120) faults 9257 copied 16.1 GB evicted 3135 prefetch 0/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 2: hit 95.4% (229/240) faults 9261 copied 16.1 GB evicted 3135 prefetch 0/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 3: hit 96.9% (349/360) faults 11373 copied 16.3 GB evicted 3197 prefetch 0/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: pid 527772: control channel closed
+tierinfer-loader: eviction channel to pid 527772 lost: [Errno 32] Broken pipe
+tierinfer-loader: eviction channel to pid 527772 lost: [Errno 32] Broken pipe
+tierinfer-loader: eviction channel to pid 527772 lost: [Errno 32] Broken pipe
+tierinfer-loader: eviction channel to pid 527772 lost: [Errno 32] Broken pipe

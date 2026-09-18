@@ -1,0 +1,171 @@
+{
+ "label": "smoke-tiered-1",
+ "cmd": [
+  "/home/svend/freetoken-qwen38/.venv/bin/ft",
+  "serve",
+  "--model",
+  "/data/ai-data/models/qwen38-flash-next-abliterated-ftw-fixed",
+  "--served-model-name",
+  "ab",
+  "--host",
+  "127.0.0.1",
+  "--port",
+  "8095",
+  "--gpu",
+  "0",
+  "--moe-strategy",
+  "offload",
+  "--moe-cpu-layers",
+  "12",
+  "--max-seq-len-override",
+  "32768",
+  "--kv-reserve-tokens",
+  "32768",
+  "--memory-ratio",
+  "0.79",
+  "--max-prefill-length",
+  "8192",
+  "--ple-backend",
+  "disk",
+  "--moe-cache-auto",
+  "--quant-backend",
+  "moe.nvfp4=triton",
+  "--max-running-requests",
+  "1",
+  "--sampling-defaults",
+  "model",
+  "--reasoning-parser",
+  "qwen3"
+ ],
+ "load_s": 47.07431149482727,
+ "wall_s": 35.67476910500045,
+ "prompt_tokens": 95,
+ "completion_tokens": 15,
+ "text": "We need answer user: \"Design an expert cache for a sparse mixture-of\u241f",
+ "stats_before": {
+  "instance_id": "e654abb9-e2f3-4acf-886d-7ab0d145e3a6",
+  "model": {
+   "id": "ab",
+   "ctx": 32768,
+   "attn": "hybrid_linear",
+   "moe": true,
+   "sampling": {
+    "temperature": 1.0,
+    "top_k": 20,
+    "top_p": 0.95
+   }
+  },
+  "uptime_s": 0,
+  "kv": null,
+  "mamba": null,
+  "swa": null,
+  "vram_bytes": 0,
+  "gpus": [
+   {
+    "index": 0,
+    "name": "NVIDIA GeForce RTX 5090",
+    "uuid": "GPU-8b1c6a65-47f7-b29d-114f-b0738f968b1b",
+    "total_bytes": 33668726784
+   }
+  ],
+  "throughput": {
+   "decode_tps": 0.0,
+   "prefill_tps": 0.0
+  },
+  "requests": {
+   "active": 0,
+   "completed": 0,
+   "p95_ms": 0,
+   "ttft_mean_ms": 0,
+   "prompt_tokens_total": 0,
+   "completion_tokens_total": 0
+  }
+ },
+ "stats_after": {
+  "instance_id": "e654abb9-e2f3-4acf-886d-7ab0d145e3a6",
+  "model": {
+   "id": "ab",
+   "ctx": 32768,
+   "attn": "hybrid_linear",
+   "moe": true,
+   "sampling": {
+    "temperature": 1.0,
+    "top_k": 20,
+    "top_p": 0.95
+   }
+  },
+  "uptime_s": 35,
+  "kv": {
+   "used_pages": 0,
+   "total_pages": 512,
+   "page_size": 1
+  },
+  "mamba": {
+   "used_slots": 0,
+   "total_slots": 8
+  },
+  "swa": null,
+  "vram_bytes": 26189234176,
+  "gpus": [
+   {
+    "index": 0,
+    "name": "NVIDIA GeForce RTX 5090",
+    "uuid": "GPU-8b1c6a65-47f7-b29d-114f-b0738f968b1b",
+    "total_bytes": 33668726784
+   }
+  ],
+  "throughput": {
+   "decode_tps": 3.0,
+   "prefill_tps": 0.0
+  },
+  "requests": {
+   "active": 0,
+   "completed": 1,
+   "p95_ms": 35672,
+   "ttft_mean_ms": 0,
+   "prompt_tokens_total": 95,
+   "completion_tokens_total": 15
+  }
+ },
+ "io_load": {
+  "reads": 152365,
+  "bytes": 61524742144,
+  "mean_read_bytes": 403798.39296426345,
+  "await_ms": 46.47601483280281,
+  "members": {
+   "sda": {
+    "reads": 60829,
+    "bytes": 30763782144,
+    "mean_read_bytes": 505742.03330648213
+   },
+   "sdb": {
+    "reads": 61013,
+    "bytes": 30760960000,
+    "mean_read_bytes": 504170.58659629914
+   }
+  }
+ },
+ "io_infer": {
+  "reads": 74619,
+  "bytes": 18089762816,
+  "mean_read_bytes": 242428.3736849864,
+  "await_ms": 0.8220560447071121,
+  "members": {
+   "sda": {
+    "reads": 36280,
+    "bytes": 9044381696,
+    "mean_read_bytes": 249293.87254685778
+   },
+   "sdb": {
+    "reads": 36420,
+    "bytes": 9045381120,
+    "mean_read_bytes": 248363.01812191104
+   }
+  }
+ },
+ "arm": "tiered",
+ "rep": "1",
+ "tier_gb": 8.0,
+ "cpu_layers": "12",
+ "gen_tps_wall": 0.42046523008602976
+}
