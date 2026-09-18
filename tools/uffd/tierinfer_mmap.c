@@ -21,6 +21,15 @@
 //      which is the only way pages in *this* process can be dropped; the next
 //      touch faults again and the server decides anew.
 //
+//   4. Interposes munmap(). llama.cpp unmaps the fragments of a file no CPU
+//      tensor lives in (the prefix before the first, the suffix after the last
+//      — which, with experts offloaded to the GPU, is gigabytes the server has
+//      already served). The hole is recorded here and reported to the server
+//      as "UNMAP <addr> <len>", and an EVICT that reaches into a hole is
+//      refused: the kernel may have given those addresses to anything since
+//      (a thread stack, a heap arena), and DONTNEED there is memory corruption
+//      in the host process, not an eviction. The first 480B run died of it.
+//
 // With TIERINFER_SOCK unset, or the server unreachable, every call falls
 // through to the real implementation: the clean baseline is the default, and
 // the shim says on stderr that it stood aside.
@@ -73,6 +82,32 @@ static pthread_t evict_thread;
 static char *files[64];
 static int   n_files;
 
+// Served regions and the holes llama.cpp has since unmapped in them.
+#define MAX_HOLES 16
+struct region { uintptr_t base; size_t len; uintptr_t hole_a[MAX_HOLES], hole_b[MAX_HOLES]; int nholes; };
+static struct region regions[64];
+static int n_regions;
+static pthread_mutex_t map_lock = PTHREAD_MUTEX_INITIALIZER;
+typedef int (*munmap_fn)(void *, size_t);
+static munmap_fn real_munmap;
+static long evicts_refused;
+
+// Is [addr, addr+len) live served memory: inside one region and clear of its holes?
+static bool live_range(uintptr_t addr, size_t len) {
+    bool ok = false;
+    pthread_mutex_lock(&map_lock);
+    for (int i = 0; i < n_regions; i++) {
+        struct region * r = &regions[i];
+        if (addr < r->base || addr + len > r->base + r->len) continue;
+        ok = true;
+        for (int h = 0; h < r->nholes; h++)
+            if (addr < r->hole_b[h] && addr + len > r->hole_a[h]) { ok = false; break; }
+        break;
+    }
+    pthread_mutex_unlock(&map_lock);
+    return ok;
+}
+
 static void say(const char * fmt, ...) {
     va_list ap; va_start(ap, fmt);
     fputs("tierinfer-mmap: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
@@ -118,6 +153,11 @@ static void * evict_loop(void * arg) {
     while (read_line(evict_sock, line, sizeof line)) {
         unsigned long long addr, len;
         if (sscanf(line, "EVICT %llx %llu", &addr, &len) == 2) {
+            if (!live_range((uintptr_t) addr, (size_t) len)) {
+                if (++evicts_refused <= 3 || evicts_refused % 1000 == 0)
+                    say("refusing EVICT %llx+%llu: not live served memory (%ld refused so far)", addr, len, evicts_refused);
+                continue;
+            }
             if (madvise((void *) (uintptr_t) addr, (size_t) len, MADV_DONTNEED) != 0) {
                 say("madvise(DONTNEED, %llx, %llu) failed: %s", addr, len, strerror(errno));
             } else {
@@ -133,6 +173,7 @@ static void * evict_loop(void * arg) {
 
 __attribute__((constructor)) static void setup(void) {
     real_mmap = (mmap_fn) dlsym(RTLD_NEXT, "mmap");
+    real_munmap = (munmap_fn) dlsym(RTLD_NEXT, "munmap");
     real_init = (init_fn) dlsym(RTLD_NEXT, "llama_init_from_model");
     const char * sock = getenv("TIERINFER_SOCK");
     const char * list = getenv("TIERINFER_FILES");
@@ -229,13 +270,16 @@ void * mmap(void * addr, size_t len, int prot, int flags, int fd, off_t off) {
                                    .mode = UFFDIO_REGISTER_MODE_MISSING };
     if (ioctl(uffd, UFFDIO_REGISTER, &reg) < 0) {
         say("UFFDIO_REGISTER %zu bytes: %s — falling back to a file mapping", alen, strerror(errno));
-        munmap(base, alen);
+        real_munmap(base, alen);
         return real_mmap(addr, len, prot, flags, fd, off);
     }
     if (!announce_mapping(path, base, len)) {
-        munmap(base, alen);
+        real_munmap(base, alen);
         return real_mmap(addr, len, prot, flags, fd, off);
     }
+    pthread_mutex_lock(&map_lock);
+    if (n_regions < 64) { regions[n_regions].base = (uintptr_t) base; regions[n_regions].len = alen; regions[n_regions].nholes = 0; n_regions++; }
+    pthread_mutex_unlock(&map_lock);
     if (!announced) { say("serving %s through userfaultfd (%zu bytes at %p)", path, len, base); announced = true; }
     // For tests that need to know where the region landed (a client cannot
     // otherwise tell an anonymous region from any other in its own maps).
@@ -250,6 +294,33 @@ void * mmap(void * addr, size_t len, int prot, int flags, int fd, off_t off) {
 // Callers built with _FILE_OFFSET_BITS=64 (Python, llama.cpp) reference the
 // mmap64 symbol; on x86_64 glibc it is the same function under another name.
 void * mmap64(void * addr, size_t len, int prot, int flags, int fd, off_t off) __attribute__((alias("mmap")));
+
+int munmap(void * addr, size_t len) {
+    if (!real_munmap) real_munmap = (munmap_fn) dlsym(RTLD_NEXT, "munmap");
+    int rc = real_munmap(addr, len);
+    if (rc != 0 || !enabled) return rc;
+    const uintptr_t a0 = (uintptr_t) addr, b0 = a0 + len;
+    // record the hole in every served region it touches, and tell the server
+    char msg[96];
+    pthread_mutex_lock(&map_lock);
+    for (int i = 0; i < n_regions; i++) {
+        struct region * r = &regions[i];
+        uintptr_t a = a0 > r->base ? a0 : r->base;
+        uintptr_t b = b0 < r->base + r->len ? b0 : r->base + r->len;
+        if (b <= a) continue;
+        if (r->nholes < MAX_HOLES) { r->hole_a[r->nholes] = a; r->hole_b[r->nholes] = b; r->nholes++; }
+        else { r->hole_a[0] = r->hole_a[0] < a ? r->hole_a[0] : a; r->hole_b[0] = r->hole_b[0] > b ? r->hole_b[0] : b; }
+        pthread_mutex_unlock(&map_lock);
+        int n = snprintf(msg, sizeof msg, "UNMAP %llx %llu\n", (unsigned long long) a, (unsigned long long) (b - a));
+        pthread_mutex_lock(&ctl_lock);
+        write_all(ctl_sock, msg, (size_t) n);
+        pthread_mutex_unlock(&ctl_lock);
+        say("unmapped %llu bytes at %llx inside a served region; told the server", (unsigned long long) (b - a), (unsigned long long) a);
+        pthread_mutex_lock(&map_lock);
+    }
+    pthread_mutex_unlock(&map_lock);
+    return rc;
+}
 
 // -- routing out ------------------------------------------------------------
 

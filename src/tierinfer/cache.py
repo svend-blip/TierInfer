@@ -346,6 +346,15 @@ class ExpertCache:
             return None
         return min(candidates, key=lambda k: (self.value(k), self._entries[k].last_hit))
 
+    def forget(self, key: ExpertKey) -> bool:
+        """Drop an entry whose bytes are gone for reasons of the client's
+        (it unmapped them). Not an eviction: nothing was chosen, nothing is
+        sent. False when the key was not resident."""
+        if key not in self._entries:
+            return False
+        self._drop(key, evicted=False)
+        return True
+
     def _drop(self, key: ExpertKey, *, evicted: bool) -> None:
         entry = self._entries.pop(key)
         self._order.pop(key, None)

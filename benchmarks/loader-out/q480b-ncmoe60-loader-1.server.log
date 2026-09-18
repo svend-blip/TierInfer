@@ -1,0 +1,13 @@
+tierinfer: start the runtime with
+  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK=/tmp/tierinfer-467937.sock TIERINFER_FILES=/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00004-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00005-of-00006.gguf:/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf
+tierinfer-loader: listening on /tmp/tierinfer-467937.sock; RAM tier 150.0 GB (5263 experts), 8 fault workers, prefetch depth 0
+tierinfer-loader: pid 475983: control channel open
+tierinfer-loader: pid 475983: eviction channel open
+tierinfer-loader: pid 475983: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf (46.54 GB at 0x7f2a81581000), 4897 regions
+tierinfer-loader: pid 475983: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00002-of-00006.gguf (46.35 GB at 0x7f1eeae28000), 5382 regions
+tierinfer-loader: pid 475983: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00003-of-00006.gguf (45.51 GB at 0x7f138a741000), 5212 regions
+tierinfer-loader: pid 475983: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00004-of-00006.gguf (45.59 GB at 0x7f0824ace000), 5217 regions
+tierinfer-loader: pid 475983: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00005-of-00006.gguf (46.31 GB at 0x7efc910e1000), 5379 regions
+tierinfer-loader: pid 475983: serving Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00006-of-00006.gguf (39.84 GB at 0x7ef29b257000), 4234 regions
+tierinfer-loader: token 1: hit 3.2% (16/496) faults 18747 copied 30.2 GB evicted 0 prefetch 0/0/1/0 resident 1338 (29.8 GB)
+tierinfer-loader: pid 475983: control channel closed
