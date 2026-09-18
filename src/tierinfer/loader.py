@@ -806,14 +806,18 @@ class LoaderServer:
             ev.wait(timeout=120)
             return
         try:
-            regions = m.layout.by_key[key]
-            layer, expert = key
+            # An expert's slabs are in one file mapping for a GGUF; for an FTW
+            # model each bank is its own buffer, so the same key has regions
+            # in several of the client's mappings. Every one is materialised:
+            # the expert is resident whole or not at all, whichever bank it
+            # was first touched through.
             nbytes = 0
-            for r in regions:
-                a = r.start & ~(PAGE - 1)
-                b = min((r.end + PAGE - 1) & ~(PAGE - 1), (m.length + PAGE - 1) & ~(PAGE - 1))
-                self._copy_pages(m, a, b, lambda x, y, r=r: self._file_bytes(m, x, y))
-                nbytes += r.end - r.start
+            for mm in self._mappings_with(key, m.pid):
+                for r in mm.layout.by_key[key]:
+                    a = r.start & ~(PAGE - 1)
+                    b = min((r.end + PAGE - 1) & ~(PAGE - 1), (mm.length + PAGE - 1) & ~(PAGE - 1))
+                    self._copy_pages(mm, a, b, lambda x, y, mm=mm: self._file_bytes(mm, x, y))
+                    nbytes += r.end - r.start
             with self._lock:
                 admitted = self.cache.put(key, None, nbytes)
                 if why == "prefetch":
@@ -824,6 +828,10 @@ class LoaderServer:
             with self._lock:
                 self._serving.pop(key, None)
             ev.set()
+
+    def _mappings_with(self, key: object, pid: int) -> list[Mapping]:
+        """The live mappings of this client that hold slabs of this expert."""
+        return [x for x in self.mappings if x.pid == pid and not x.dead and key in x.layout.by_key]
 
     def _serve_floor(self, m: Mapping, offset: int) -> None:
         """Materialise the aligned chunk of floor around ``offset``, pinned."""
@@ -1006,7 +1014,6 @@ class LoaderServer:
                         self.stats.evict_bytes += y - x
                     except OSError as e:
                         self._say(f"eviction channel to pid {m.pid} lost: {e}")
-            break
 
     # -- the client unmapped part of a served region ---------------------------
 
