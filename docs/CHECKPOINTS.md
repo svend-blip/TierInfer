@@ -224,3 +224,39 @@ inferred from bytes read.
 - **Unresolved:** none.
 - **Next:** CP-6b/7/8 replay arms are running (`chain5`), starting with the
   byte-verification arm.
+
+## CP-8a — failure behaviour on the real model (first pass)
+
+- **Revision:** the commit carrying this entry.
+- **Command:** `benchmarks/replay.py <shard 1> traces/qwen3coder480b-prose-400.jsonl --depth 8 --predictor-warmup 30 --tokens 8 --verify-every 1 --drop-after-read --ram-gb 60 --inject <mode>`
+  under `systemd-run --user --scope -p MemoryMax=140G`; every delivered
+  expert compared byte for byte with `safety.exact_load`.
+- **Results** (`benchmarks/replay-out/480b/*.log`, `*.summary.json`):
+  - `verify-d8` (no injection, cold, 3 tokens): 1 488 deliveries, 0 mismatches.
+  - `inj-bad-predictor` (always predicts experts 144–159): 397 speculative
+    reads issued, 10 useful, 384 wasted (10.9 GB), 1 838 exact fallbacks
+    counted as stalls, pool exhausted 444 times; **3 968 deliveries, 0
+    mismatches**. A wrong predictor costs bandwidth and time, nothing else.
+  - `inj2-fail-reads` (one speculative read in fifty raises `EIO`): 15
+    injected → 15 failed streamer loads → 15 exact fallbacks; 270 issued,
+    93 useful, 24 late; **3 968 deliveries, 0 mismatches**.
+  - `inj2-tiny-pool` (two buffers): pool exhausted 165 times, 29 issued,
+    12 useful; **0 mismatches**. Speculation is throttled, delivery is not.
+  - `inj2-tiny-vram` (eight device slots): ran and delivered **0
+    mismatches**, but its VRAM counters were lost to a bug in the harness
+    (`if vram:` on an object whose `__len__` is 0 after `close()`); fixed,
+    rerun queued as `inj3-tiny-vram`.
+  - `inj-fail-reads`, `inj-tiny-pool` (first pass, no predictor warm-up)
+    and `inj2-missing-range`: **the injection did not fire** — with eight
+    tokens of history every prediction named an expert already resident,
+    so no speculative read existed to fail, and the unresolvable expert
+    (3, 7) was never routed to. Both are harness lessons, recorded: the
+    injections were re-aimed (`--predictor-warmup`; the broken expert is now
+    one the second replayed token routes to) and `inj3-missing-range` is
+    queued.
+- **Also found by this pass:** the cache reported a 100 % hit rate while
+  every expert came from the file, because the prefetcher never told it
+  about misses (fixed, `897cd37`). Ten defects in, the pattern the project
+  keeps meeting: a counter that is only ever incremented on the happy path.
+- **Unresolved:** `missing-range` and `tiny-vram` results pending rerun.
+- **Next:** measurement arms running (`cache-d0-100g` first).

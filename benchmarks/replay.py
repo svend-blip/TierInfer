@@ -200,7 +200,16 @@ def main() -> int:
     else:
         predictor = AdaptiveBlend([Frequency(), Persistence(), Transition()], k=16)
 
-    broken = (3, 7) if a.inject == "missing-range" else None
+    # The unresolvable expert has to be one the replay will actually route to,
+    # or the injection never fires (the first attempt picked (3, 7) and the
+    # eight tokens replayed never asked for it): take the first expert the
+    # second replayed token routes to in its lowest MoE layer.
+    broken = None
+    if a.inject == "missing-range":
+        r1 = rows[min(1, len(rows) - 1)]
+        layer = min(r1.routing)
+        broken = (layer, r1.routing[layer][0])
+        print(f"missing-range: expert {broken} will not resolve; token 1 routes to it")
 
     def ranges_for(key):
         if key == broken:
@@ -229,6 +238,9 @@ def main() -> int:
         if slots <= 0:
             print(f"VRAM budget leaves no slot for an expert:\n{budget.explain()}", file=sys.stderr)
             return 2
+        # VramResidency defines __len__, so `if vram:` is false while it is
+        # empty — including after close(). Every test below is `is not None`;
+        # the first tiny-vram arm lost its VRAM numbers to exactly that.
         vram = VramResidency(rt, expert_bytes, slots, tracker)
         staging = rt.host_alloc(expert_bytes)
         print(f"vram: {slots} slots of {expert_bytes / MB:.1f} MB = {vram.device_bytes / GB:.1f} GB "
@@ -240,7 +252,7 @@ def main() -> int:
                  predictor_warmup=len(warm_rows), first_token_index=len(warm_rows),
                  ram_bytes=ram_bytes, ram_slots=ram_slots, expert_bytes=expert_bytes,
                  floor_bytes=floor, workers=a.workers, pool_slots=pool_slots,
-                 vram_slots=(vram.slots if vram else 0), attn_ms=a.attn_ms, ffn_ms=a.ffn_ms,
+                 vram_slots=(vram.slots if vram is not None else 0), attn_ms=a.attn_ms, ffn_ms=a.ffn_ms,
                  drop_after_read=a.drop_after_read, cold=a.cold, inject=a.inject,
                  device=device, members=",".join(members),
                  residency_before=round(res0.fraction, 4))
@@ -261,7 +273,7 @@ def main() -> int:
     deliveries = 0
     sources = {"storage": backend.stats, "stream": streamer.stats, "cache": cache.stats,
                "prefetch": pf.stats}
-    if vram:
+    if vram is not None:
         sources["vram"] = vram.stats
     fatal = None
     t_run0 = time.perf_counter()
@@ -272,9 +284,9 @@ def main() -> int:
             s0 = (pf.stats.stalls, pf.stats.late, pf.stats.used, pf.stats.issued,
                   pf.stats.wasted_bytes, cache.stats.hits, cache.stats.misses,
                   cache.stats.evictions, streamer.stats.bytes_read,
-                  vram.stats.hits if vram else 0, vram.stats.misses if vram else 0,
-                  vram.stats.bytes_transferred if vram else 0,
-                  vram.stats.transfer_seconds if vram else 0.0)
+                  vram.stats.hits if vram is not None else 0, vram.stats.misses if vram is not None else 0,
+                  vram.stats.bytes_transferred if vram is not None else 0,
+                  vram.stats.transfer_seconds if vram is not None else 0.0)
             wait_s = vram_s = 0.0
             sofar: dict = {}
             for layer in sorted(row.routing):
@@ -311,9 +323,9 @@ def main() -> int:
             s1 = (pf.stats.stalls, pf.stats.late, pf.stats.used, pf.stats.issued,
                   pf.stats.wasted_bytes, cache.stats.hits, cache.stats.misses,
                   cache.stats.evictions, streamer.stats.bytes_read,
-                  vram.stats.hits if vram else 0, vram.stats.misses if vram else 0,
-                  vram.stats.bytes_transferred if vram else 0,
-                  vram.stats.transfer_seconds if vram else 0.0)
+                  vram.stats.hits if vram is not None else 0, vram.stats.misses if vram is not None else 0,
+                  vram.stats.bytes_transferred if vram is not None else 0,
+                  vram.stats.transfer_seconds if vram is not None else 0.0)
             dd = d1 - d0
             rec = {"token": i, "wall_ms": (time.perf_counter() - t0) * 1000,
                    "wait_ms": wait_s * 1000, "vram_ms": vram_s * 1000,
@@ -337,7 +349,7 @@ def main() -> int:
                       f"cache {rec['cache_hits']:3d}/{rec['cache_hits'] + rec['cache_misses']:3d}  "
                       f"dev {rec['dev_bytes'] / GB:5.2f} GB {rec['dev_reads']:6d} reads "
                       f"@{rec['dev_mean_read_bytes'] / 1024:5.0f} KB"
-                      + (f"  vram {rec['vram_hits']}/{rec['vram_hits'] + rec['vram_misses']}" if vram else ""))
+                      + (f"  vram {rec['vram_hits']}/{rec['vram_hits'] + rec['vram_misses']}" if vram is not None else ""))
     except RuntimeError as e:
         fatal = str(e)
         print(f"FATAL: {fatal}", file=sys.stderr)
@@ -376,7 +388,7 @@ def main() -> int:
         "config": {"ram_bytes": ram_bytes, "ram_slots": ram_slots, "depth": a.depth,
                    "workers": a.workers, "pool_slots": pool_slots, "attn_ms": a.attn_ms,
                    "ffn_ms": a.ffn_ms, "drop_after_read": a.drop_after_read, "cold": a.cold,
-                   "inject": a.inject, "vram_slots": vram.slots if vram else 0,
+                   "inject": a.inject, "vram_slots": vram.slots if vram is not None else 0,
                    "expert_bytes": expert_bytes, "experts_per_token":
                    ix.expert_used_count * len(ix.moe_layers)},
         "per_token": {"wall_ms_median": med("wall_ms"),
@@ -414,7 +426,7 @@ def main() -> int:
                   "bytes_transferred": vram.stats.bytes_transferred,
                   "gbps": vram.stats.bytes_per_second / GB,
                   "mean_transfer_ms": vram.stats.mean_transfer_seconds * 1000}
-                 if vram else None),
+                 if vram is not None else None),
         "device": {"name": device, "reads": dev.reads, "bytes": dev.bytes_read,
                    "mean_read_bytes": dev.mean_read_bytes, "await_ms": dev.await_ms,
                    "bandwidth_gbps": dev.bandwidth_gbps, "iops": dev.iops,
@@ -446,7 +458,7 @@ def main() -> int:
                       for m, x in mem_delta.items()))
     print(f"  per token: median {summary['per_token']['dev_bytes_median'] / GB:.2f} GB from {device} "
           f"in {summary['per_token']['dev_reads_median']:.0f} reads")
-    if vram:
+    if vram is not None:
         print(f"  vram: {vram.stats.hit_rate:.1%} hit ({vram.stats.hits}/{vram.stats.lookups}), "
               f"{vram.stats.transfers} transfers, {vram.stats.bytes_transferred / GB:.1f} GB at "
               f"{vram.stats.bytes_per_second / GB:.1f} GB/s")

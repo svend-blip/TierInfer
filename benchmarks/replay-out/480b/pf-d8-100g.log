@@ -1,0 +1,5 @@
+cold: residency after drop 0.00%
+replay pf-d8-100g: 150 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 100.0 GB = 3509 experts (35.4% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    20319 ms  wait  19210  stalls 484 late   3 useful   9  cache   0/496  dev 14.54 GB  41451 reads @  368 KB
+  token    1     7886 ms  wait   7449  stalls 186 late   0 useful   3  cache 307/496  dev  5.94 GB  16919 reads @  368 KB
+  token    2     6203 ms  wait   5845  stalls 141 late   6 useful   5  cache 344/496  dev  4.57 GB  13080 reads @  366 KB

@@ -1,0 +1,13 @@
+vram: 8 slots of 29.2 MB = 0.2 GB (budget left 29.4 GB after KV 0.97 GB at 4096, reserve 0.51 GB measured)
+replay inj2-tiny-vram: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    22190 ms  wait  15875  stalls 463 late   6 useful  27  cache   0/496  dev 14.21 GB  40099 reads @  372 KB  vram 0/496
+  token    1    19784 ms  wait  10227  stalls 288 late   3 useful  38  cache 167/496  dev 13.18 GB  37255 reads @  371 KB  vram 0/496
+  token    2    18379 ms  wait   7063  stalls 212 late   7 useful  22  cache 255/496  dev 12.58 GB  35981 reads @  367 KB  vram 0/496
+
+inj2-tiny-vram: 8 tokens in 144 s, median 17171 ms/token (min 16429, max 22190)
+  cache hit rate 62.3% (2471/3968), 0 evictions, 1497 resident at end
+  prefetch issued 249, useful 90, late 20, wasted 139 (3.8 GB), stalls 1387, accuracy 44.2%, pool exhausted 76, timed out 0
+  stream 6.7 GB at 0.52 GB/s, 0 failed reads, storage ops 16065
+  md0: 105.3 GB in 301981 reads @ 366 KB, await 1.64 ms, 0.73 GB/s; sda: 52.6 GB in 137005 @ 403 KB; sdb: 52.7 GB in 136857 @ 404 KB
+  per token: median 13.09 GB from md0 in 37561 reads
+  verified 3968 deliveries against exact reads, 0 mismatches; residency 0.9% -> 0.9%

@@ -1,0 +1,12 @@
+replay inj2-missing-range: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    21095 ms  wait  16320  stalls 463 late   5 useful  28  cache   0/496  dev 14.21 GB  40237 reads @  370 KB
+  token    1    18398 ms  wait  10277  stalls 288 late   3 useful  38  cache 167/496  dev 13.18 GB  37284 reads @  371 KB
+  token    2    17004 ms  wait   7096  stalls 212 late   7 useful  22  cache 255/496  dev 12.58 GB  35834 reads @  368 KB
+
+inj2-missing-range: 8 tokens in 133 s, median 15680 ms/token (min 14959, max 21095)
+  cache hit rate 62.3% (2471/3968), 0 evictions, 1497 resident at end
+  prefetch issued 249, useful 91, late 19, wasted 139 (3.8 GB), stalls 1387, accuracy 44.2%, pool exhausted 76, timed out 0
+  stream 6.7 GB at 0.51 GB/s, 0 failed reads, storage ops 16065
+  md0: 105.3 GB in 301648 reads @ 366 KB, await 1.66 ms, 0.79 GB/s; sda: 52.6 GB in 137100 @ 402 KB; sdb: 52.7 GB in 136806 @ 404 KB
+  per token: median 13.09 GB from md0 in 37611 reads
+  verified 3968 deliveries against exact reads, 0 mismatches; residency 0.9% -> 0.9%

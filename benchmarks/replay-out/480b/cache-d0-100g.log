@@ -1,0 +1,19 @@
+cold: residency after drop 0.00%
+replay cache-d0-100g: 150 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 100.0 GB = 3509 experts (35.4% of all); depth 0, 8 workers, pool 16; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    19625 ms  wait  18510  stalls 496 late   0 useful   0  cache   0/496  dev 13.17 GB  37891 reads @  365 KB
+  token    1     7405 ms  wait   6968  stalls 189 late   0 useful   0  cache 307/496  dev  5.02 GB  14467 reads @  364 KB
+  token    2     5964 ms  wait   5609  stalls 152 late   0 useful   0  cache 344/496  dev  4.05 GB  11643 reads @  365 KB
+  token   24     1882 ms  wait   1743  stalls  47 late   0 useful   0  cache 449/496  dev  1.25 GB   3606 reads @  363 KB
+  token   49     1301 ms  wait   1187  stalls  31 late   0 useful   0  cache 465/496  dev  0.82 GB   2376 reads @  360 KB
+  token   74     1074 ms  wait    955  stalls  27 late   0 useful   0  cache 469/496  dev  0.72 GB   2110 reads @  356 KB
+  token   99     5152 ms  wait   4717  stalls 165 late   0 useful   0  cache 331/496  dev  4.39 GB  12648 reads @  364 KB
+  token  124     2692 ms  wait   2404  stalls  91 late   0 useful   0  cache 405/496  dev  2.37 GB   6960 reads @  358 KB
+  token  149      765 ms  wait    634  stalls  25 late   0 useful   0  cache 471/496  dev  0.66 GB   1939 reads @  359 KB
+
+cache-d0-100g: 150 tokens in 332 s, median 1576 ms/token (min 243, max 19625)
+  cache hit rate 87.6% (65177/74400), 5481 evictions, 3742 resident at end
+  prefetch issued 0, useful 0, late 0, wasted 0 (0.0 GB), stalls 9223, accuracy 0.0%, pool exhausted 0, timed out 0
+  stream 0.0 GB at 0.00 GB/s, 0 failed reads, storage ops 27669
+  md0: 245.7 GB in 713592 reads @ 361 KB, await 1.41 ms, 0.74 GB/s; sda: 122.9 GB in 319380 @ 403 KB; sdb: 122.9 GB in 319471 @ 403 KB
+  per token: median 1.17 GB from md0 in 3408 reads
+  verified 0 deliveries against exact reads, 0 mismatches; residency 0.0% -> 0.0%

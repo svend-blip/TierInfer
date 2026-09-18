@@ -1,0 +1,12 @@
+replay inj2-tiny-pool: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 2; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    20973 ms  wait  15971  stalls 490 late   0 useful   6  cache   0/496  dev 13.22 GB  37609 reads @  369 KB
+  token    1    18624 ms  wait  10388  stalls 328 late   0 useful   1  cache 167/496  dev 13.13 GB  37205 reads @  370 KB
+  token    2    17539 ms  wait   7506  stalls 238 late   0 useful   3  cache 255/496  dev 13.16 GB  37632 reads @  367 KB
+
+inj2-tiny-pool: 8 tokens in 134 s, median 15815 ms/token (min 14948, max 20973)
+  cache hit rate 62.3% (2471/3968), 0 evictions, 1497 resident at end
+  prefetch issued 29, useful 12, late 1, wasted 16 (0.4 GB), stalls 1484, accuracy 44.8%, pool exhausted 165, timed out 0
+  stream 0.8 GB at 0.98 GB/s, 0 failed reads, storage ops 16356
+  md0: 105.3 GB in 301621 reads @ 366 KB, await 1.41 ms, 0.78 GB/s; sda: 52.6 GB in 137152 @ 402 KB; sdb: 52.7 GB in 136911 @ 403 KB
+  per token: median 13.16 GB from md0 in 37646 reads
+  verified 3968 deliveries against exact reads, 0 mismatches; residency 0.9% -> 0.9%
