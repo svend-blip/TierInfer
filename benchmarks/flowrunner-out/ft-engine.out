@@ -1,0 +1,7 @@
+engine freetoken+TierInfer
+endpoint http://127.0.0.1:8096
+model qwen38-flash-next-abliterated-ftw-fixed
+startup_seconds 44.5
+completion We need answer user: "Design an expert cache for a sparse mixture-of-experts model whose weights live on NVMe RAID. Cover the cache policy,␟
+timings {"completion_tokens":31,"prompt_tokens":90,"total_tokens":121,"wall_seconds":24.644209461}
+telemetry {"engine":"llama.cpp+TierInfer","loader.bytes_copied":17075011584,"loader.coalesced_experts":0,"loader.coalesced_reads":0,"loader.copy_eagain":0,"loader.copy_seconds":4.951167695406184,"loader.evict_bytes":0,"loader.evictions":0,"loader.faults":9136,"loader.faults_duplicate":344,"loader.faults_expert":9136,"loader.faults_floor":0,"loader.faults_repaired":0,"loader.faults_resident":2648,"loader.forgotten":0,"loader.hits":3480,"loader.misses":120,"loader.prefetch_class_background_hot":0,"loader.prefetch_class_high_confidence_next":0,"loader.prefetch_class_probable_next":0,"loader.prefetch_class_required_now":0,"loader.prefetch_dropped_full":0,"loader.prefetch_enqueued":0,"loader.prefetch_issued":0,"loader.prefetch_late":0,"loader.prefetch_served":0,"loader.prefetch_superseded":0,"loader.prefetch_useful":0,"loader.prefetch_wasted":0,"loader.read_retries":0,"loader.read_seconds":41.80697415518807,"loader.repeat_faults":0,"loader.resident":6144,"loader.resident_bytes":17034117120,"loader.routed":3600,"loader.tokens":30,"loader.unmapped_bytes":0,"loader.unmapped_pages":0,"loader.unmaps":0}

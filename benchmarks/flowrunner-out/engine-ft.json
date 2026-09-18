@@ -1,0 +1,42 @@
+{
+ "runtime": "freetoken",
+ "tierinfer_cli": "/home/svend/TierInfer/bin/tierinfer",
+ "freetoken_cli": "/home/svend/freetoken-qwen38/.venv/bin/ft",
+ "model_path": "/data/ai-data/models/qwen38-flash-next-abliterated-ftw-fixed",
+ "tier_gb": 16,
+ "cpu_layers": "12",
+ "tierinfer_src": "/home/svend/TierInfer/src",
+ "freetoken_args": [
+  "--gpu",
+  "0",
+  "--moe-strategy",
+  "offload",
+  "--max-seq-len-override",
+  "32768",
+  "--kv-reserve-tokens",
+  "32768",
+  "--memory-ratio",
+  "0.79",
+  "--max-prefill-length",
+  "8192",
+  "--ple-backend",
+  "disk",
+  "--moe-cache-auto",
+  "--quant-backend",
+  "moe.nvfp4=triton",
+  "--max-running-requests",
+  "1",
+  "--sampling-defaults",
+  "model",
+  "--reasoning-parser",
+  "qwen3"
+ ],
+ "telemetry": "/tmp/claude-1000/-home-svend-DPMtF-WebUI/ae95e412-4516-40b3-8970-4d2d7ebbba2b/scratchpad/flow/ft-engine.telemetry.jsonl",
+ "port": 8096,
+ "health_timeout_seconds": 1800,
+ "env": {
+  "CUDA_HOME": "/usr/local/cuda-13.0",
+  "LD_LIBRARY_PATH": "/usr/local/cuda-13.0/lib64",
+  "PATH": "/usr/local/cuda-13.0/bin"
+ }
+}
