@@ -104,6 +104,11 @@ step. Prefetch for the next step adds nothing measurable. Full table:
 `benchmarks/freetoken-out/flashnext.md`; the checkpoint: `docs/CHECKPOINTS.md`
 CP-13.
 
+The server was also killed under it, live: 12 s into a completion, with
+the prefill still filling the tier. The client took over, every later row
+came from the shards, the 63 tokens matched native, and the request took
+42 s instead of 25 (CP-16).
+
 ## Tests
 
 - `tests/test_ftw.py` — the FTW index on a synthetic checkpoint.

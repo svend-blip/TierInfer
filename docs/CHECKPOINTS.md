@@ -602,3 +602,38 @@ inferred from bytes read.
   74 % of guesses land before use; measured value: none); TI-NVME-008
   extended with the align measurement; TI-POLICY-006 → VERIFIED (built,
   tested; live value bounded by the prefetch result).
+
+## CP-16 — the server dies under FreeToken; FreeToken through FlowRunner (TI-FT-012, TI-FLOW-003)
+
+- **Revision:** TierInfer `d030fc2`/`fe682c6`, FreeToken branch
+  `tierinfer-tier` (`patches/`), FlowRunner `d556ef4`.
+- **Failure injection, live** (`benchmarks/freetoken-out/flashnext-kill-tiered-2.*`,
+  `freetoken_ab.py --kill-server-after 12`): Flash-Next, 12 tiered layers,
+  16 GB tier; `tierinfer serve` SIGKILLed 12 s into the completion, while
+  the prefill was still pulling the layers through the tier. FreeToken's
+  client saw its eviction channel close, said so
+  (`tierinfer-client: the server … went away; serving faults from the
+  checkpoint myself`), woke every served region so the pool threads whose
+  faults the dead server had already taken retried, and answered every
+  later fault itself from the FTW shards, page by page. The 63 greedy
+  tokens are **identical** to native and to the undisturbed 16 GB run;
+  decode ran at 35.5 t/s (everything resident by then); the whole request
+  took 42 s against 25 s undisturbed, the difference being page-sized
+  reads for the rest of the prefill. The first attempt (`…-kill-tiered-1`)
+  hung: the fallback served new faults but not the threads already asleep
+  in faults the server had consumed — the wake fixed it (`d030fc2`), and
+  the unit test (`tests/test_client_ftw.py`) checks the wake count.
+  Without `TIERINFER_SOCK` the patched FreeToken is the unpatched one;
+  with a socket that never answers, `load_ftw_banks` raises before any
+  bank is allocated.
+- **FreeToken through FlowRunner** (`benchmarks/flowrunner-out/ft-engine.out`):
+  `flowrunner engine run` with `"runtime": "freetoken"` started
+  `tierinfer serve` and `ft serve`, waited on FreeToken's health, ran one
+  greedy completion (31 tokens, 24.6 s wall), read TierInfer's telemetry
+  back (17.1 GB faulted in at prefill, 3 480 hits / 120 misses at decode)
+  and stopped both. Two adapter defects found on the way and fixed in
+  FlowRunner: a runtime that exited before health was never noticed
+  (Signal(0) cannot see a zombie; every process is now reaped), and the
+  runtime lacked its own bin directory and CUDA on PATH (`env` in the
+  configuration; the runtime's bin dir is prepended).
+- **Acceptance IDs moved:** TI-FT-012 → VERIFIED; TI-FLOW-003 → VERIFIED.

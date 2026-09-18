@@ -152,7 +152,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-FT-009 | VERIFIED | `loader.*` vs FreeToken's `stats_before/after` in every run JSON (CP-13) |
 | TI-FT-010 | VERIFIED | greedy output identical across eleven runs, native and tiered (CP-13) |
 | TI-FT-011 | VERIFIED | `benchmarks/freetoken-out/flashnext.md`: native ×2, tiered 8/16 GB, prefetch; repeated (CP-13) |
-| TI-FT-012 | PARTIAL | `TIERINFER_SOCK` unset → unpatched behaviour; tier absent → explicit `RuntimeError`; refused evictions counted; failure injections under a running FreeToken not done |
+| TI-FT-012 | VERIFIED | live: `tierinfer serve` killed 12 s into a completion; the client served its own faults, output identical to native (CP-16); unset socket → unpatched path; absent tier → explicit error |
 
 ## Telemetry (A.16)
 
