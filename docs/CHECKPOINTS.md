@@ -543,3 +543,17 @@ inferred from bytes read.
   absent tier → explicit error, refused evictions counted; failure
   injections under a running FreeToken not done). TI-PREF-008 (live) →
   VERIFIED, negative under FreeToken as in replay.
+
+## CP-14 — the trainable prerouter on 480B routing (item 2)
+
+- **Revision:** `1c90d9d`; `benchmarks/prerouter_eval.py` on
+  `traces/qwen3coder480b-{prose,code}-400.jsonl`, run on an idle machine
+  (`benchmarks/480b/raw/prerouter-eval.txt`).
+- **Result:** online prerouter recall@16 77.4 % (prose) / 66.3 % (code)
+  in-class and 61.7 % / 74.4 % across classes, against the adaptive blend's
+  67.6 / 57.3 / 51.0 / 64.7 — ten points better in every direction; frozen
+  it loses across classes. Training 4–9 s per 400-token trace on the CPU.
+  V §5.1 has the table and the caveat: prefetch has shown no measurable
+  effect under real compute, so this is a better guess for a mechanism
+  whose value on this device is unproven.
+- **Acceptance IDs moved:** TI-PRED-007 → VERIFIED.

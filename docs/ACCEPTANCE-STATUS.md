@@ -85,7 +85,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-PRED-001 | IMPLEMENTED_UNVERIFIED | loader `_prefetch_after` uses the predictor on live routing; runtime evidence pending |
 | TI-PRED-002 | VERIFIED (replay) | prefetch issued by prediction (RO pf-d8) |
 | TI-PRED-003…006 | VERIFIED | recall@k, waste, per arm (V §5, RO) |
-| TI-PRED-007 | VERIFIED (tests) / IN_PROGRESS (eval) | `prerouter.py`: per-layer linear multi-label, online SGD, `.npz` persistence; save/load survives restart (`test_prerouter.py`); recall on 480B traces pending an idle machine |
+| TI-PRED-007 | VERIFIED | `prerouter.py` persists (`test_prerouter.py`); on 480B traces online recall@16 77.4 % prose / 66.3 % code, +10 points over the adaptive blend (V §5.1) |
 | TI-PRED-008 | VERIFIED | bad-predictor injection, 0 mismatches (CP-8b) |
 
 ## Prefetch (A.11)

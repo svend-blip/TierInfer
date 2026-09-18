@@ -369,6 +369,33 @@ above; the ordering of the signals is the same. Prediction here is a
 statement about which experts to *have ready*; §4 measures what that buys
 against real reads.
 
+### 5.1 A trainable prerouter, measured (item 2)
+
+`src/tierinfer/prerouter.py` is a per-layer linear multi-label model over
+the previous layers' routing (numpy, SGD, online updates, `.npz`
+persistence; `tests/test_prerouter.py` covers train/save/load).
+`benchmarks/prerouter_eval.py` trains it on one trace (or the first half)
+and scores recall@k on another (or the second half) against the counting
+predictors given the same tokens (`raw/prerouter-eval.txt`):
+
+| k | train → test | prerouter frozen | **prerouter online** | transition | adaptive blend |
+|--:|---|--:|--:|--:|--:|
+| 16 | prose, first half → second half | 72.3 % | **77.4 %** | 67.4 % | 67.6 % |
+| 16 | code, first half → second half | 59.1 % | **66.3 %** | 57.6 % | 57.3 % |
+| 16 | prose → code | 35.7 % | **61.7 %** | 48.5 % | 51.0 % |
+| 16 | code → prose | 53.2 % | **74.4 %** | 63.5 % | 64.7 % |
+| 8 | prose, first half → second half | 53.8 % | **58.8 %** | 47.6 % | 47.8 % |
+| 8 | code, first half → second half | 43.0 % | **49.3 %** | 39.3 % | 39.3 % |
+
+The online prerouter beats the adaptive blend by about ten points of
+recall@16 in every direction, including across prompt classes; frozen, it
+wins in-class and loses across classes (it has learned one distribution).
+Training costs 4–9 s per 400-token trace on the CPU. Whether ten more
+points of recall change the I/O picture is bounded by §4.2 and CP-13:
+prefetch under real compute has so far had no measurable effect, so the
+prerouter is a better guess for a mechanism whose value is still unproven
+on this device. It is not yet the loader's default predictor.
+
 ## 6. Failure behaviour
 
 Same replay path, every delivered expert compared byte for byte with an
@@ -425,7 +452,7 @@ two wrong guesses for every right one.
 | RAM cache effectiveness | 86.8 % / 91.7 % hit with less RAM than native's page cache; 36–65 % fewer bytes, 20–40× fewer operations |
 | VRAM working-set effectiveness | 22.1 % hit from 792 slots on routing over 9 920 experts; 26.5 GB/s pinned transfers, 0.99 ms each; synchronous staging costs ~1.1 s per token in the replay |
 | prefetch effectiveness | **none measurable**: within 1 % of cache-only at 100 and 150 GiB; without compute two of three speculative reads are late or wasted; depth 16 doubles waste for nothing |
-| expert predictor effectiveness | heuristic; transition 66.8 % (prose) / 56.6 % (code) recall@16, 15 points over frequency; no trainable prerouter |
+| expert predictor effectiveness | transition 66.8 % (prose) / 56.6 % (code) recall@16; trainable prerouter online **77.4 % / 66.3 %**, +10 points over the blend in every direction (§5.1) |
 | observed bottlenecks | native: CPU-bound page faulting (85 % CPU, device half idle); TierInfer: ~0.75 GB/s for 8.8–12.9 MB reads split at 512 KB stripe chunks, device half idle; the synchronous exact path is the token's I/O wait and concurrency does not help it on this device |
 | correctness issues discovered | sharded GGUF unsupported (blocking); strided-view routing read wrong on b10482; tracker fed per admission; cache misses never counted on the prefetch path; reload cost fed with queueing noise; wait timeout outside the guard; blocking drop; stranded loads on close; unbounded size list; ignored fadvise failures; `if vram:` falsy when empty; policy simulator's seconds in the observed schema; text-matching safety audit; expert size assumed uniform |
 | correctness issues repaired | all of the above (`8d33288`, `897cd37`, `08f18d6`, `d71d993`, and the replay commits); 18 000+ deliveries verified byte for byte across the failure arms, 0 mismatches |
