@@ -83,3 +83,24 @@ def test_the_resident_floor_excludes_routed_experts_and_includes_the_shared_one(
     assert all("_exps" not in t.name for group in
                (layer.attention, layer.norms, layer.router, layer.shared_expert)
                for t in group)
+
+
+def test_expert_sizes_can_differ_by_layer(tmp_path):
+    """A Q4_K_M build stores some layers' down projection at Q6_K and others at
+    Q4_K, so a fixed slot has to be sized to the largest expert, not the first."""
+    from test_gguf import write_gguf
+    from tierinfer.gguf import read_gguf
+    Q6_K = 14
+    tensors = [("token_embd.weight", (256, 8), F32)]
+    for l, down_type in ((0, IQ4_XS), (1, Q6_K)):
+        tensors += [(f"blk.{l}.ffn_gate_inp.weight", (256, 4), F32),
+                    (f"blk.{l}.ffn_gate_exps.weight", (256, 4, 4), IQ4_XS),
+                    (f"blk.{l}.ffn_up_exps.weight", (256, 4, 4), IQ4_XS),
+                    (f"blk.{l}.ffn_down_exps.weight", (256, 4, 4), down_type)]
+    p = write_gguf(tmp_path / "m.gguf", tensors, {"general.architecture": "glm4moe",
+                   "glm4moe.expert_count": 4, "glm4moe.expert_used_count": 2, "glm4moe.block_count": 2})
+    ix = ModelIndex(read_gguf(p))
+    sizes = ix.expert_nbytes_by_layer()
+    assert sizes[1] > sizes[0]
+    assert ix.expert_nbytes() == sizes[0]
+    assert ix.expert_nbytes_max() == sizes[1]

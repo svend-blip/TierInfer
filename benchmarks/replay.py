@@ -160,7 +160,7 @@ def main() -> int:
     # -- model, host, configuration ------------------------------------
     ix = load(a.model)
     n_expert = ix.expert_count
-    expert_bytes = ix.expert_nbytes()
+    expert_bytes = ix.expert_nbytes_max()      # slots hold the largest; layers differ (Q6_K vs Q4_K down)
     floor = ix.always_resident_nbytes()
     host = Host.measure()
     cfg = configure(ix, context_length=a.context, host=host, stream_workers=a.workers,

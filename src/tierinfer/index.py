@@ -189,11 +189,27 @@ class ModelIndex:
         return ExpertRef(layer=layer, expert=expert, ranges=tuple(ranges))
 
     def expert_nbytes(self) -> int:
-        """Bytes one routed expert occupies, taken from the first MoE layer."""
+        """Bytes one routed expert occupies, taken from the first MoE layer.
+
+        Not every layer's expert is the same size: a Q4_K_M build quantises
+        some layers' down projection to Q6_K and others to Q4_K, so on the
+        480B validation model experts run from 26.5 to 30.6 MB. Buffer slots
+        and budgets should use :meth:`expert_nbytes_max`; this stays as the
+        single representative figure callers already rely on.
+        """
         moe = self.moe_layers
         if not moe:
             return 0
         return self.expert(moe[0], 0).nbytes
+
+    def expert_nbytes_by_layer(self) -> dict[int, int]:
+        """Bytes of one expert in each MoE layer (expert 0; a layer's slabs are equal)."""
+        return {layer: self.expert(layer, 0).nbytes for layer in self.moe_layers}
+
+    def expert_nbytes_max(self) -> int:
+        """The largest expert in the model: what a fixed slot has to hold."""
+        sizes = self.expert_nbytes_by_layer()
+        return max(sizes.values()) if sizes else 0
 
     def always_resident_nbytes(self) -> int:
         """Everything that is not a routed expert: the floor under any budget."""

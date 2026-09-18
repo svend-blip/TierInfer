@@ -17,6 +17,7 @@ def _report(ix: ModelIndex) -> dict:
     resident = ix.always_resident_nbytes()
     routed = ix.routed_nbytes()
     per_expert = ix.expert_nbytes()
+    by_layer = ix.expert_nbytes_by_layer()
     return {
         "model": str(ix.gguf.path),
         "shards": len(ix.gguf.files),
@@ -33,6 +34,8 @@ def _report(ix: ModelIndex) -> dict:
             "always_resident": resident,
             "routed_experts": routed,
             "per_expert": per_expert,
+            "per_expert_min": min(by_layer.values()) if by_layer else 0,
+            "per_expert_max": max(by_layer.values()) if by_layer else 0,
             "working_set_per_token": ix.working_set_nbytes(),
         },
     }
@@ -45,9 +48,11 @@ def _print_text(r: dict) -> None:
           f"{r['shards']} file{'s' if r['shards'] != 1 else ''})")
     print(f"layers           {r['layers']}, of which {r['moe_layers']} are MoE")
     if r["experts_per_layer"]:
+        size = (f"{b['per_expert'] / MB:.2f} MB each" if b["per_expert_min"] == b["per_expert_max"]
+                else f"{b['per_expert_min'] / MB:.2f}-{b['per_expert_max'] / MB:.2f} MB each "
+                     f"(varies by layer; layer {r['layers'] and 0} has {b['per_expert'] / MB:.2f})")
         print(f"experts          {r['experts_per_layer']} per layer, "
-              f"{r['experts_used_per_token']} used per token, "
-              f"{b['per_expert'] / MB:.2f} MB each")
+              f"{r['experts_used_per_token']} used per token, {size}")
     print()
     print(f"total            {b['total'] / GB:8.2f} GB")
     print(f"always resident  {b['always_resident'] / GB:8.2f} GB   attention, norms, router, shared experts")
