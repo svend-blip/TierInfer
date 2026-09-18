@@ -94,6 +94,103 @@ class LoaderError(RuntimeError):
     pass
 
 
+# -- what a layout source has to answer -------------------------------------
+
+
+class GGUFSource:
+    """`tierinfer.index.ModelIndex` as the loader sees it."""
+
+    kind = "gguf"
+
+    def __init__(self, index) -> None:
+        self.index = index
+
+    @property
+    def files(self) -> tuple[Path, ...]:
+        return tuple(self.index.gguf.files)
+
+    @property
+    def moe_layers(self) -> list[int]:
+        return self.index.moe_layers
+
+    @property
+    def expert_count(self) -> int:
+        return self.index.expert_count
+
+    def expert_ranges(self, layer: int, expert: int) -> list[ByteRange]:
+        return list(self.index.expert(layer, expert).ranges)
+
+    def floor_ranges(self) -> list[ByteRange]:
+        expert_tensors = set()
+        for layer in self.index.moe_layers:
+            for r in self.index.expert(layer, 0).ranges:
+                expert_tensors.add(r.name.split("#")[0])
+        return [ByteRange(t.name, t.file_offset, t.nbytes, t.path)
+                for t in self.index.gguf.tensors if t.name not in expert_tensors]
+
+    def expert_nbytes_max(self) -> int:
+        return self.index.expert_nbytes_max()
+
+    def describe(self) -> str:
+        return str(self.index.gguf.path)
+
+    def physical(self, logical_off: int, nbytes: int) -> list[ByteRange]:
+        raise LoaderError("a GGUF mapping is a file, not a logical region")
+
+
+class FTWSource:
+    """`tierinfer.ftw.FTWIndex` as the loader sees it: FreeToken's checkpoint."""
+
+    kind = "ftw"
+
+    def __init__(self, ftw) -> None:
+        self.ftw = ftw
+
+    @property
+    def files(self) -> tuple[Path, ...]:
+        return self.ftw.files
+
+    @property
+    def moe_layers(self) -> list[int]:
+        return self.ftw.moe_layers
+
+    @property
+    def expert_count(self) -> int:
+        return self.ftw.expert_count
+
+    def expert_ranges(self, layer: int, expert: int) -> list[ByteRange]:
+        return self.ftw.expert_rows(layer, expert)
+
+    def floor_ranges(self) -> list[ByteRange]:
+        out: list[ByteRange] = []
+        for e in self.ftw.floor_entries():
+            out += self.ftw.physical(e.name, e.global_off, e.nbytes)
+        return out
+
+    def expert_nbytes_max(self) -> int:
+        return max(self.ftw.expert_nbytes(l) for l in self.ftw.moe_layers) if self.ftw.moe_layers else 0
+
+    def describe(self) -> str:
+        return str(self.ftw.directory)
+
+    def physical(self, logical_off: int, nbytes: int) -> list[ByteRange]:
+        return self.ftw.physical(f"logical:{logical_off}", logical_off, nbytes)
+
+    def logical_key(self, logical_off: int):
+        hit = self.ftw.logical_to_key(logical_off)
+        return hit[0] if hit else None
+
+
+def as_source(index_or_source):
+    if hasattr(index_or_source, "expert_ranges"):
+        return index_or_source
+    if hasattr(index_or_source, "gguf"):
+        return GGUFSource(index_or_source)
+    if hasattr(index_or_source, "expert_rows"):
+        return FTWSource(index_or_source)
+    raise LoaderError(f"cannot serve a {type(index_or_source).__name__}: not a GGUF index or an FTW index")
+
+
 # -- the layout of a mapping ------------------------------------------------
 
 
@@ -108,23 +205,50 @@ class Region:
 
 
 class FileLayout:
-    """Every region of one model file, addressable by offset in O(log n)."""
+    """Every region of one model file, addressable by offset in O(log n).
 
-    def __init__(self, index: ModelIndex, path: Path) -> None:
+    Built from a layout source (GGUF or FTW). For a *logical* mapping — a
+    buffer standing in for a slice of an FTW region rather than a file —
+    ``logical_off``/``logical_len`` select the slice, and region offsets
+    are buffer offsets.
+    """
+
+    def __init__(self, source, path: Path | None, *, logical_off: int | None = None,
+                 logical_len: int = 0) -> None:
+        source = as_source(source)
+        self.source = source
         self.path = path
-        self.size = path.stat().st_size
+        self.logical_off = logical_off
+        self.size = path.stat().st_size if path is not None else logical_len
         regions: list[Region] = []
-        expert_tensors = set()
-        for layer in index.moe_layers:
-            for e in range(index.expert_count):
-                ref = index.expert(layer, e)
-                for r in ref.ranges:
-                    if r.path == path:
-                        regions.append(Region(r.file_offset, r.end, (layer, e), r.name))
-                        expert_tensors.add(r.name.split("#")[0])
-        for t in index.gguf.tensors:
-            if t.path == path and t.name not in expert_tensors:
-                regions.append(Region(t.file_offset, t.file_offset + t.nbytes, ("floor", t.name), t.name))
+        if logical_off is None:
+            for layer in source.moe_layers:
+                for e in range(source.expert_count):
+                    for r in source.expert_ranges(layer, e):
+                        if r.path == path:
+                            regions.append(Region(r.file_offset, r.end, (layer, e), r.name))
+            for r in source.floor_ranges():
+                if r.path == path:
+                    regions.append(Region(r.file_offset, r.end, ("floor", r.name), r.name))
+        else:
+            # buffer offset b is logical offset logical_off + b; walk the
+            # region's entries and keep what falls inside the slice
+            ftw = source.ftw
+            lo, hi = logical_off, logical_off + logical_len
+            for e in ftw.entries:
+                if e.end <= lo or e.global_off >= hi:
+                    continue
+                layer_bank = ftw.logical_to_key(e.global_off)
+                if layer_bank and layer_bank[0][0] != "floor":
+                    layer = layer_bank[0][0]
+                    row = e.nbytes // ftw.num_experts
+                    for x in range(ftw.num_experts):
+                        a, b = e.global_off + x * row, e.global_off + (x + 1) * row
+                        if b <= lo or a >= hi:
+                            continue
+                        regions.append(Region(max(a, lo) - lo, min(b, hi) - lo, (layer, x), f"{e.name}#expert{x}"))
+                else:
+                    regions.append(Region(max(e.global_off, lo) - lo, min(e.end, hi) - lo, ("floor", e.name), e.name))
         regions.sort(key=lambda r: r.start)
         self.regions = regions
         self._starts = [r.start for r in regions]
@@ -176,6 +300,7 @@ class Mapping:
     pid: int
     pagemap_fd: int = -1          # /proc/<pid>/pagemap, when readable
     dead: bool = False
+    logical_off: int | None = None    # set when the mapping is a slice of an FTW region, not a file
 
     def contains(self, addr: int) -> bool:
         return self.base <= addr < self.base + self.length
@@ -368,10 +493,11 @@ class LoaderStats:
 class LoaderServer:
     """Accepts mappings from preloaded llama.cpp processes and serves them."""
 
-    def __init__(self, index: ModelIndex, *, ram_bytes: int, workers: int = 8, depth: int = 0,
+    def __init__(self, index, *, ram_bytes: int, workers: int = 8, depth: int = 0,
                  telemetry: Telemetry | None = None, floor_chunk: int = 16 * MB,
                  predictor: Predictor | None = None, verbose: bool = True,
                  drop_page_cache: bool = True) -> None:
+        self.source = as_source(index)
         self.index = index
         self.drop_page_cache = drop_page_cache
         self.ram_bytes = ram_bytes
@@ -380,8 +506,8 @@ class LoaderServer:
         self.floor_chunk = floor_chunk
         self.verbose = verbose
         self.tel = telemetry
-        self.backend = StorageBackend.for_model(index.gguf)
-        self.layouts: dict[Path, FileLayout] = {}
+        self.backend = StorageBackend(self.source.files)
+        self.layouts: dict[object, FileLayout] = {}
         self.mappings: list[Mapping] = []
         self.tracker = ExpertTracker(window=128)
         self.predictor = predictor or AdaptiveBlend([Frequency(), Persistence(), Transition()], k=16)
@@ -425,11 +551,11 @@ class LoaderServer:
         srv.listen(8)
         srv.settimeout(0.5)
         self._say(f"listening on {sock_path}; RAM tier {self.ram_bytes / GB:.1f} GB "
-                  f"({self.ram_bytes // max(1, self.index.expert_nbytes_max())} experts), "
+                  f"({self.ram_bytes // max(1, self.source.expert_nbytes_max())} experts), "
                   f"{self.workers} fault workers, prefetch depth {self.depth}")
         if self.tel:
-            self.tel.open_run(model=str(self.index.gguf.path), ram_bytes=self.ram_bytes,
-                              workers=self.workers, depth=self.depth, files=len(self.index.gguf.files))
+            self.tel.open_run(model=self.source.describe(), layout=self.source.kind, ram_bytes=self.ram_bytes,
+                              workers=self.workers, depth=self.depth, files=len(self.source.files))
         try:
             while not self._stop.is_set():
                 try:
@@ -489,20 +615,32 @@ class LoaderServer:
             f.close()
 
     def _on_map(self, conn: socket.socket, pid: int, line: str, fds: list[int]) -> None:
-        _, path_s, base_s, len_s = line.split()
-        path = Path(path_s)
+        # MAP <path-or-tag> <base> <len> [<logical_off>]
+        parts = line.split()
+        path_s, base_s, len_s = parts[1], parts[2], parts[3]
+        logical_off = int(parts[4]) if len(parts) > 4 else None
         if not fds:
             conn.sendall(b"NO no descriptor attached\n")
             return
         uffd = fds[0]
-        if path not in {Path(p) for p in self.index.gguf.files}:
-            conn.sendall(b"NO not a file of this model\n")
-            os.close(uffd)
-            return
-        layout = self.layouts.get(path)
-        if layout is None:
-            layout = self.layouts[path] = FileLayout(self.index, path)
-        m = Mapping(path=path, base=int(base_s, 16), length=int(len_s), uffd=uffd, layout=layout, pid=pid)
+        if logical_off is None:
+            path = Path(path_s)
+            if path not in {Path(p) for p in self.source.files}:
+                conn.sendall(b"NO not a file of this model\n")
+                os.close(uffd)
+                return
+            layout = self.layouts.get(path)
+            if layout is None:
+                layout = self.layouts[path] = FileLayout(self.source, path)
+        else:
+            if self.source.kind != "ftw":
+                conn.sendall(b"NO a logical mapping needs an FTW layout\n")
+                os.close(uffd)
+                return
+            path = Path(path_s)             # a tag naming the buffer, kept for messages
+            layout = FileLayout(self.source, None, logical_off=logical_off, logical_len=int(len_s))
+        m = Mapping(path=path, base=int(base_s, 16), length=int(len_s), uffd=uffd, layout=layout, pid=pid,
+                    logical_off=logical_off)
         m.open_pagemap()
         with self._lock:
             self.mappings.append(m)
@@ -697,26 +835,34 @@ class LoaderServer:
             ev.set()
 
     def _file_bytes(self, m: Mapping, a: int, b: int) -> bytes:
-        """The file's bytes for [a, b), zero-padded past EOF. Exact path, retried once."""
+        """The bytes behind [a, b) of the mapping, zero-padded past its end.
+
+        For a file mapping that is the file; for a logical slice of an FTW
+        region it is the shard bytes the FTW index names for those logical
+        offsets. Exact path either way, retried once.
+        """
         end = min(b, m.layout.size)
-        want = ByteRange(name=f"{m.path.name}:{a}", file_offset=a, nbytes=end - a, path=m.path)
+        if m.logical_off is None:
+            wants = [ByteRange(name=f"{m.path.name}:{a}", file_offset=a, nbytes=end - a, path=m.path)]
+        else:
+            wants = self.source.physical(m.logical_off + a, end - a)
         t0 = time.perf_counter()
         try:
-            blobs, _ = self.backend.read([want])
+            blobs, _ = self.backend.read(wants)
         except OSError as e:
             self.stats.read_retries += 1
-            self._say(f"read of {want.name} failed ({e}); retrying once")
-            blobs, _ = self.backend.read([want])
+            self._say(f"read of {wants[0].name} failed ({e}); retrying once")
+            blobs, _ = self.backend.read(wants)
         self.stats.read_seconds += time.perf_counter() - t0
         if self.drop_page_cache:
             # The bytes now live in the client's mapping; a second copy in the
             # page cache would be RAM the tier does not account for, and would
             # make an eviction a lie (the next fault would be served from RAM).
             try:
-                self.backend.evict([want])
+                self.backend.evict(wants)
             except OSError as e:
-                self._say(f"could not drop page cache behind {want.name}: {e}")
-        data = blobs[0]
+                self._say(f"could not drop page cache behind {wants[0].name}: {e}")
+        data = b"".join(blobs) if len(blobs) > 1 else blobs[0]
         if end < b:
             data += bytes(b - end)
         return data
@@ -866,7 +1012,7 @@ class LoaderServer:
         for them without evicting anything — a guess that evicts a resident
         expert to make room for a "hot" one is a guess LRU already made.
         """
-        moe = self.index.moe_layers
+        moe = self.source.moe_layers
         token = self.stats.tokens
         self.scheduler.routed(layer, token)
         ahead = [l for l in moe if l > layer][:2]
@@ -884,7 +1030,7 @@ class LoaderServer:
                         else Priority.PROBABLE_NEXT)
                 if self.scheduler.submit(key, layer=nxt, token=token, priority=prio):
                     self.stats.prefetch_issued += 1
-        if self.cache.free_bytes > 4 * self.index.expert_nbytes_max() and self.tracker.tokens_seen > 8:
+        if self.cache.free_bytes > 4 * self.source.expert_nbytes_max() and self.tracker.tokens_seen > 8:
             for key in self.tracker.hot(4):
                 with self._lock:
                     if key in self.cache or key in self._serving:
