@@ -1,7 +1,7 @@
 From c3b229898aa175a442598f7dbecf0b85cc63e0b0 Mon Sep 17 00:00:00 2001
 From: svend-blip <svend@torplarsen.dk>
 Date: Fri, 18 Sep 2026 10:31:57 +0200
-Subject: [PATCH 1/3] feat(moe): TierInfer-served expert banks for CPU-executor
+Subject: [PATCH 1/4] feat(moe): TierInfer-served expert banks for CPU-executor
  layers
 
 With TIERINFER_SOCK set (a running `tierinfer serve <ftw-dir> --ram-gb N`)
@@ -318,7 +318,7 @@ index 0000000..eee05b1
 From 4e7b8856ea5fe5c9926b9deecc4098b42b5b94de Mon Sep 17 00:00:00 2001
 From: svend-blip <svend@torplarsen.dk>
 Date: Fri, 18 Sep 2026 10:49:20 +0200
-Subject: [PATCH 2/3] fix(moe): drain the stream before reporting the previous
+Subject: [PATCH 2/4] fix(moe): drain the stream before reporting the previous
  step's routing to TierInfer
 
 The per-layer id logs are written by the graph on the compute stream; read
@@ -350,7 +350,7 @@ index ca81e32..c21df82 100644
 From c50484b6cccc9b78a09226973340e316e3c0cedf Mon Sep 17 00:00:00 2001
 From: svend-blip <svend@torplarsen.dk>
 Date: Fri, 18 Sep 2026 10:55:38 +0200
-Subject: [PATCH 3/3] fix(moe): the routing log is a device-to-host copy, so
+Subject: [PATCH 3/4] fix(moe): the routing log is a device-to-host copy, so
  the graph replays it
 
 A pinned-to-pinned copy_ is a CPU memcpy at capture time, not a graph node;
@@ -375,6 +375,66 @@ index c21df82..d5cbb72 100644
              if (layer_id, bs) not in self._route_pending:
                  self._route_pending.append((layer_id, bs))
  
+-- 
+2.43.0
+
+
+From a44a07ed8ef5737f9f161e5e66d37c486caa7fd7 Mon Sep 17 00:00:00 2001
+From: svend-blip <svend@torplarsen.dk>
+Date: Fri, 18 Sep 2026 11:51:27 +0200
+Subject: [PATCH 4/4] feat(moe): tiered banks know their checkpoint, so the
+ client can serve itself if TierInfer dies
+
+---
+ python/freetoken/checkpoint/ftw.py     | 2 +-
+ python/freetoken/moe/host_banks.py     | 5 +++--
+ python/freetoken/moe/tierinfer_tier.py | 4 ++--
+ 3 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/python/freetoken/checkpoint/ftw.py b/python/freetoken/checkpoint/ftw.py
+index 3b70401..8d18c4e 100644
+--- a/python/freetoken/checkpoint/ftw.py
++++ b/python/freetoken/checkpoint/ftw.py
+@@ -562,7 +562,7 @@ def load_ftw_banks(
+             if residency[layer_id] == HostResidency.TIERED.value:
+                 # TierInfer's: announced with its identity in the FTW region, never read here
+                 bank = HostBank(tuple(e["shape"]), _dtype_of(e["dtype"]), backing="tierinfer",
+-                                tier=(tier_sock, e["name"], e["global_off"]))
++                                tier=(tier_sock, e["name"], e["global_off"], path))
+                 row_hb[base].append(bank)
+                 row_view_args[base].append(None)
+                 continue
+diff --git a/python/freetoken/moe/host_banks.py b/python/freetoken/moe/host_banks.py
+index 875f8cd..65d24a9 100644
+--- a/python/freetoken/moe/host_banks.py
++++ b/python/freetoken/moe/host_banks.py
+@@ -106,8 +106,9 @@ class HostBank:
+             assert tier is not None, "backing='tierinfer' needs tier=(sock, tag, logical_off)"
+             from freetoken.moe.tierinfer_tier import tiered_region
+ 
+-            sock, tag, logical_off = tier
+-            self._tier = tiered_region(sock, tag=tag, nbytes=self.nbytes, logical_off=logical_off)
++            sock, tag, logical_off, *rest = tier
++            model_dir = rest[0] if rest else None   # where the client reads from if the server dies
++            self._tier = tiered_region(sock, tag=tag, nbytes=self.nbytes, logical_off=logical_off, model_dir=model_dir)
+             self._buf = self._tier.buffer
+             self.addr = self._tier.base
+             self._pinned = False
+diff --git a/python/freetoken/moe/tierinfer_tier.py b/python/freetoken/moe/tierinfer_tier.py
+index eee05b1..a98267b 100644
+--- a/python/freetoken/moe/tierinfer_tier.py
++++ b/python/freetoken/moe/tierinfer_tier.py
+@@ -33,8 +33,8 @@ def _client():
+     return client
+ 
+ 
+-def tiered_region(sock: str, *, tag: str, nbytes: int, logical_off: int):
+-    return _client().TieredRegion(sock, tag=tag, nbytes=nbytes, logical_off=logical_off)
++def tiered_region(sock: str, *, tag: str, nbytes: int, logical_off: int, model_dir: str | None = None):
++    return _client().TieredRegion(sock, tag=tag, nbytes=nbytes, logical_off=logical_off, model_dir=model_dir)
+ 
+ 
+ def route(sock: str, layer: int, ids, *, after: bool = True) -> None:
 -- 
 2.43.0
 
