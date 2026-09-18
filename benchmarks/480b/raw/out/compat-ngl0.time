@@ -1,0 +1,23 @@
+	Command being timed: "/home/svend/llama.cpp-qwen38/build/bin/llama-cli -m /data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf -ngl 0 -c 512 -n 8 -t 32 -st --temp 0 -p The capital of Denmark is"
+	User time (seconds): 1067.98
+	System time (seconds): 1877.67
+	Percent of CPU this job got: 943%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:12.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 183518768
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 229873
+	Minor (reclaiming a frame) page faults: 1979664
+	Voluntary context switches: 713467
+	Involuntary context switches: 463783
+	Swaps: 0
+	File system inputs: 844747392
+	File system outputs: 88
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

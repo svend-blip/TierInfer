@@ -89,3 +89,57 @@ resumable from this file and the repository alone.
   under FreeToken.
 - **Next:** CP-3, validate the 480B GGUF (already partly done at CP-1 via
   `tierinfer.gguf`; llama.cpp side running).
+
+## CP-3 — 480B GGUF validated
+
+- **Revision:** the commit carrying this entry.
+- **Tested (addendum §6, §7):**
+  1. Six shards present in
+     `/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/`;
+     sizes 49 973 553 312 / 49 768 927 168 / 48 862 488 352 / 48 952 192 064 /
+     49 721 298 176 / 42 780 367 136 — byte-identical to the addendum's list;
+     total 290 058 826 208 B = 270.1 GiB.
+  2. `tierinfer.gguf.read_model` on shard 1 (post-CP-2): GGUF v3,
+     `general.architecture=qwen3moe`, `general.file_type=15` (Q4_K_M),
+     `split.count=6`, `split.no` 0..5 in order, `split.tensors.count=747`
+     = tensors found (127+135+124+129+132+100); tensor types Q4_K / Q6_K /
+     F32 only; **every shard's last tensor ends exactly at its file's EOF**
+     (the smoketest goal-2 check, now per shard). Model: 62 layers, all MoE,
+     160 experts, 8 used per token, no shared expert, `head_count_kv=8`,
+     `key_length=value_length=128`, context 262 144. One expert =
+     8 847 360 + 8 847 360 (gate/up, Q4_K) + 12 902 400 (down, Q6_K) =
+     30.6 MB; 496 experts per token = 15.2 GB; routed total 303.4 GB of…
+     see `tierinfer inspect` in CP-4 for the floor/routed split.
+  3. llama.cpp b10482 (`~/llama.cpp-qwen38/build/bin/llama-cli`),
+     conservative first run, exact command:
+     `llama-cli -m <shard 1> -ngl 0 -c 512 -n 8 -t 32 -st --temp 0 -p "The capital of Denmark is"`
+     → exit 0, output `The capital of Denmark is Copenhagen.`, wall 5 m 12 s,
+     RSS 183.5 GB (mapped pages), 229 873 major faults; md0 read **432 GB**
+     for the 290 GB model (8 972 229 reads, 47 KB mean logical; sda/sdb
+     each ~985 k reads at 213 KB mean physical). That all six shards were
+     resolved follows from the bytes read exceeding any subset of shards
+     and from the coherent output; llama.cpp's own `print_info` lines are
+     not emitted by this build's `llama-cli`/`llama-server` logs and will be
+     taken from `tierinfer-trace`'s stderr (which carries `llama_log`) in
+     CP-6.
+  4. `llama-server` (same build) loads the model from shard 1 and answers
+     `/completion` coherently in every baseline run so far (CP-4).
+- **Result:** the model and the runtime are compatible; no llama.cpp change
+  was needed.
+- **Unresolved:** none for this checkpoint.
+- **Next:** CP-4 native baseline (running: `native-ngl0-cold{1,2,3}`,
+  `warm{1,2,3}`).
+
+### Incident during CP-4 runs, recorded here because it changed the method
+
+The first runner started `llama-server` under `/usr/bin/time -v` and later
+killed `$!` — which was `time`, not the server. The server survived as an
+orphan on port 8931; the next run's server failed to bind, the runner's
+health poll succeeded against the orphan, and "warm1" ran against cold1's
+still-mapped server (valid as a warm run, and kept), while the "cold2" that
+followed had 54 % of the model still resident behind a live mapping — the
+project's own goal-6 finding, met again. cold2 was discarded and rerun
+after the orphan was stopped; the runner now owns the server's pid, refuses
+a busy port, and reads `VmHWM`/`majflt` from `/proc` before stopping it.
+Raw artefacts of every run, including the discarded one's log lines, are in
+`benchmarks/480b/raw/`.

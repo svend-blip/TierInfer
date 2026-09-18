@@ -1,0 +1,24 @@
+Command exited with non-zero status 1
+	Command being timed: "/home/svend/llama.cpp-qwen38/build/bin/llama-server --port 8931 --host 127.0.0.1 --log-file /tmp/claude-1000/-home-svend-DPMtF-WebUI/ae95e412-4516-40b3-8970-4d2d7ebbba2b/scratchpad/480b/base/native-ngl0-warm1.server.log -m /data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf -ngl 0 -c 4096 -t 32 --no-warmup -fa off"
+	User time (seconds): 0.05
+	System time (seconds): 0.28
+	Percent of CPU this job got: 46%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.72
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 315268
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 5360
+	Minor (reclaiming a frame) page faults: 35317
+	Voluntary context switches: 5425
+	Involuntary context switches: 24
+	Swaps: 0
+	File system inputs: 307952
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

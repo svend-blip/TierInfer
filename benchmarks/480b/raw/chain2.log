@@ -1,0 +1,7 @@
+prompt 111 tok in 53.3s (2.084 t/s); gen 32 tok in 137.7s (0.225 t/s)
+/tmp/claude-1000/-home-svend-DPMtF-WebUI/ae95e412-4516-40b3-8970-4d2d7ebbba2b/scratchpad/480b/serve_run.sh: linje 38: kill: (52762) - Ingen sådan proces
+cold residency 0.5417504970158573
+--- chain2b start 2026-09-18T01:29:15Z: chain2 stopped after warm1 (its server was cold1's orphan; warm1 is valid, cold2 discarded)
+cold residency 0.5657793964836194
+prompt 111 tok in 133.2s (0.833 t/s); gen 32 tok in 140.9s (0.220 t/s)
+native-ngl0-cold2 done

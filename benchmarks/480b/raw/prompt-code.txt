@@ -1,0 +1,8 @@
+Here is a Python function that reads byte ranges from a file with os.pread and returns them as a list. Rewrite it so that the reads are issued from a small pool of worker threads, every returned buffer comes from a fixed pool of preallocated bytearrays, a caller can cancel a read that has not started, and a short read raises rather than returning fewer bytes. Then write a pytest test that proves the concurrent version returns byte-identical data to the sequential one on a file the test writes itself.
+
+def read_ranges(path, ranges):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        return [os.pread(fd, n, off) for off, n in ranges]
+    finally:
+        os.close(fd)
