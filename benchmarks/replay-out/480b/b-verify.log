@@ -1,1 +1,4 @@
 cold: residency after drop 0.00%
+replay b-verify: 3 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 0, 8 workers, pool 16; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    19783 ms  wait  14799  stalls 496 late   0 useful   0  cache   0/496  dev 13.17 GB  36325 reads @  380 KB
+  token    1    18861 ms  wait  10755  stalls 329 late   0 useful   0  cache 167/496  dev 13.17 GB  36701 reads @  376 KB

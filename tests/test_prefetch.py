@@ -85,7 +85,9 @@ def test_an_expert_nobody_predicted_is_still_delivered(parts, modelfile):
     want = modelfile.read_bytes()[5 * EXPERT:6 * EXPERT]
     assert got[(0, 5)] == want
     assert p.stats.stalls == 1
-    assert p.stats.exact_fallbacks == 1
+    # Read exactly — through the streamer as a demand read when a slot is
+    # free, through load_now otherwise. Either way it was never speculative.
+    assert p.stats.demand_batched + p.stats.exact_fallbacks == 1
 
 
 def test_every_routed_expert_comes_back_however_wrong_the_guess(parts, modelfile):
