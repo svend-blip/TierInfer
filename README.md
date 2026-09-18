@@ -50,7 +50,8 @@ tokens identical in all six, 36 % fewer bytes in 5× fewer reads; CP-12 in
 `docs/CHECKPOINTS.md`). The same server serves FreeToken's expert banks to
 its CPU-executor layers through a Python client (`docs/FREETOKEN.md`).
 `docs/AUDIT-2026-09-18.md` is the component-by-component account,
-`docs/ACCEPTANCE-STATUS.md` the live status per acceptance criterion.
+`docs/ACCEPTANCE-STATUS.md` the live status per acceptance criterion
+(2026-09-18: 119 of 120 verified or accepted, one blocked by design).
 Everything below is a measurement on the reference model, not a plan.
 
 | | |

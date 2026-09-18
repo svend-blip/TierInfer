@@ -5,7 +5,13 @@ evidence points at repository paths, commits, tests, artefacts and
 checkpoints in `docs/CHECKPOINTS.md`. Updated at every checkpoint; the
 date at the top is the last reconciliation.
 
-**Last reconciled: 2026-09-18 (CP-11: loader's first live A/B on GLM).**
+**Last reconciled: 2026-09-18, after CP-16.** 120 rows: **100 VERIFIED,
+19 ACCEPTED, 1 BLOCKED** (TI-LLAMA-008: a TierInfer VRAM tier under
+llama.cpp needs a llama.cpp patch; llama.cpp's own `-ncmoe` owns the card
+and is what the 480B runs used). Nothing IN_PROGRESS, NOT_STARTED or
+IMPLEMENTED_UNVERIFIED remains. Negative results are VERIFIED as measured,
+not hidden: prefetch (any depth, any predictor) does not pay on this
+device (CP-13, CP-15); stripe alignment cuts requests, not time (CP-15).
 
 Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 `docs/CHECKPOINTS.md`; AUD = `docs/AUDIT-2026-09-18.md`; RO =
