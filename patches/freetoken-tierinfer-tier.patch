@@ -1,0 +1,316 @@
+From c3b229898aa175a442598f7dbecf0b85cc63e0b0 Mon Sep 17 00:00:00 2001
+From: svend-blip <svend@torplarsen.dk>
+Date: Fri, 18 Sep 2026 10:31:57 +0200
+Subject: [PATCH] feat(moe): TierInfer-served expert banks for CPU-executor
+ layers
+
+With TIERINFER_SOCK set (a running `tierinfer serve <ftw-dir> --ram-gb N`)
+and --moe-cpu-layers naming the CPU-executor layers, those layers' banks
+take HostResidency.TIERED: an anonymous buffer TierInfer fills per expert
+row on first touch from the FTW shards and evicts under its budget, in
+place of the load-time O_DIRECT fill. GPU layers keep the pinned banks and
+the slot cache; pin()/lock() refuse a tiered bank (both would fault the
+whole bank in). Flat-region banks refuse tiering (rows must be
+addressable per layer). The CPU executor logs each tiered layer's ids to
+a per-layer pinned buffer inside the step and reports them to TierInfer
+before the next step (ROUTED: after the fact, since a graph replay leaves
+Python out of the step). Unpatched configurations are unchanged.
+---
+ python/freetoken/checkpoint/ftw.py     | 22 ++++++++++++++
+ python/freetoken/engine/engine.py      | 22 +++++++++++++-
+ python/freetoken/moe/cpu_executor.py   | 24 +++++++++++++++
+ python/freetoken/moe/host_banks.py     | 37 +++++++++++++++++++----
+ python/freetoken/moe/tierinfer_tier.py | 41 ++++++++++++++++++++++++++
+ 5 files changed, 140 insertions(+), 6 deletions(-)
+ create mode 100644 python/freetoken/moe/tierinfer_tier.py
+
+diff --git a/python/freetoken/checkpoint/ftw.py b/python/freetoken/checkpoint/ftw.py
+index 207765b..3b70401 100644
+--- a/python/freetoken/checkpoint/ftw.py
++++ b/python/freetoken/checkpoint/ftw.py
+@@ -466,10 +466,20 @@ def load_ftw_banks(
+     born = born_pinned_default()
+ 
+     def _backing(layer_id: int) -> str:
++        if residency[layer_id] == HostResidency.TIERED.value:
++            return "tierinfer"
+         if born and residency[layer_id] == HostResidency.PINNED.value:
+             return "cuda"
+         return "mmap"
+ 
++    tier_sock = None
++    if any(r == HostResidency.TIERED.value for r in residency):
++        from freetoken.moe.tierinfer_tier import socket_path
++
++        tier_sock = socket_path()
++        if tier_sock is None:
++            raise RuntimeError("layer residency 'tiered' needs TIERINFER_SOCK (a running tierinfer serve)")
++
+     reader = FTWReader(path)
+     bank_entries = reader.entries("experts_bank")
+     if not bank_entries:
+@@ -525,6 +535,11 @@ def load_ftw_banks(
+         row_hb[name] = []
+         row_view_args[name] = []
+         for layer_id in range(num_layers):
++            if residency[layer_id] == HostResidency.TIERED.value:
++                raise RuntimeError(
++                    f"FTW bank {name!r} is one flat region; a tiered layer needs per-layer entries "
++                    "(convert with the streamable path) so its rows are addressable"
++                )
+             off = e["global_off"] + layer_id * layer_bytes
+             win_off = (off // ALIGN) * ALIGN
+             win_end = _align_up(off + layer_bytes)
+@@ -544,6 +559,13 @@ def load_ftw_banks(
+         for layer_id in range(num_layers):
+             e = by_layer[layer_id]
+             assert e["global_off"] % ALIGN == 0, (base, layer_id, e["global_off"])  # writer invariant
++            if residency[layer_id] == HostResidency.TIERED.value:
++                # TierInfer's: announced with its identity in the FTW region, never read here
++                bank = HostBank(tuple(e["shape"]), _dtype_of(e["dtype"]), backing="tierinfer",
++                                tier=(tier_sock, e["name"], e["global_off"]))
++                row_hb[base].append(bank)
++                row_view_args[base].append(None)
++                continue
+             bank = HostBank(tuple(e["shape"]), _dtype_of(e["dtype"]), backing=_backing(layer_id))
+             row_hb[base].append(bank)
+             row_view_args[base].append(None)
+diff --git a/python/freetoken/engine/engine.py b/python/freetoken/engine/engine.py
+index 006c190..984ac34 100644
+--- a/python/freetoken/engine/engine.py
++++ b/python/freetoken/engine/engine.py
+@@ -551,7 +551,23 @@ class Engine:
+         # pick (parallel for scattered experts, with a low-RAM fallback to serial).
+         expert_parallel = {"serial": False, "parallel": True}.get(config.expert_load, None)
+         requested_residency = None
+-        if split_residency:
++        from freetoken.moe.tierinfer_tier import socket_path as _tier_sock
++
++        if _tier_sock() and cpu_layer_ids:
++            # TierInfer serves the CPU-executor layers' banks from NVMe under its own budget;
++            # GPU layers keep FreeToken's pinned banks. Same consequences as split residency.
++            from freetoken.moe.host_banks import HostResidency
++
++            requested_residency = [
++                HostResidency.TIERED.value if i in cpu_layer_ids
++                else HostResidency.PINNED.value
++                for i in range(config.model_config.num_moe_layers)
++            ]
++            if config.moe_prefill_overlap:
++                logger.info_rank0("TierInfer tier: disabling MoE prefill overlap (tiered layers prefill via pageable copies)")
++                object.__setattr__(config, "moe_prefill_overlap", False)
++            logger.info_rank0(f"TierInfer tier at {_tier_sock()}: layers {sorted(cpu_layer_ids)} served on demand")
++        elif split_residency:
+             from freetoken.moe.host_banks import HostResidency
+ 
+             requested_residency = [
+@@ -911,6 +927,10 @@ class Engine:
+     def forward_batch(self, batch: Batch, args: BatchSamplingArgs) -> ForwardOutput:
+         assert torch.cuda.current_stream() == self.stream
+         use_graph = self.graph_runner.can_use_cuda_graph(batch)
++        if self.cpu_moe_executor is not None:
++            # the previous step's routing, read back from the pinned log (a graph replay leaves
++            # Python out of the step); tells TierInfer what ran, for its predictor and its books
++            self.cpu_moe_executor.flush_routes()
+         with self.ctx.forward_batch(batch), self.model.forward_host_ctx(batch, use_graph):
+             logits = self.graph_runner.replay(batch) if use_graph else self.model.forward()
+         if self.cpu_moe_executor is not None:
+diff --git a/python/freetoken/moe/cpu_executor.py b/python/freetoken/moe/cpu_executor.py
+index e2e48d1..ca81e32 100644
+--- a/python/freetoken/moe/cpu_executor.py
++++ b/python/freetoken/moe/cpu_executor.py
+@@ -188,6 +188,13 @@ class CpuMoeExecutor:
+         self.num_layers = int(cache.num_layers)
+         self.num_experts = int(cache.num_experts)
+         self.top_k = int(top_k)
++        # TierInfer: when a tier is up, each CPU layer's ids are also copied to a per-layer pinned
++        # log inside the step (captured into the graph), and flush_routes() reports them after
++        from freetoken.moe.tierinfer_tier import socket_path as _tier_sock
++
++        self._tier_sock = _tier_sock()
++        self._route_log: dict[tuple[int, int], torch.Tensor] = {}
++        self._route_pending: list[tuple[int, int]] = []
+         self.quant_format = fmt
+         self.device = device
+         self.max_tokens = int(max_tokens)
+@@ -570,6 +577,13 @@ class CpuMoeExecutor:
+         io["x"].copy_(hidden_states, non_blocking=True)
+         io["ids"].copy_(topk_ids.to(torch.int32), non_blocking=True)
+         io["w"].copy_(topk_weights.to(torch.float32), non_blocking=True)
++        if self._tier_sock is not None:
++            log = self._route_log.get((layer_id, bs))
++            if log is None:
++                log = self._route_log[(layer_id, bs)] = alloc_pinned_tensor(bs, self.top_k, dtype=torch.int32)
++            log.copy_(io["ids"], non_blocking=True)
++            if (layer_id, bs) not in self._route_pending:
++                self._route_pending.append((layer_id, bs))
+ 
+         task = self._task_for(layer_id, bs)
+         out = torch.empty_like(hidden_states)
+@@ -586,6 +600,16 @@ class CpuMoeExecutor:
+             self._ext.submit_with_cuda_stream(stream, task)
+         return (bs, task, out, slot)
+ 
++    def flush_routes(self) -> None:
++        """Report the last step's CPU-layer routing to TierInfer (``ROUTED``: after the fact).
++        Called before the next step, when the previous step's pinned logs are complete."""
++        if self._tier_sock is None or not self._route_pending:
++            return
++        from freetoken.moe.tierinfer_tier import route
++
++        for layer_id, bs in self._route_pending:
++            route(self._tier_sock, layer_id, self._route_log[(layer_id, bs)], after=True)
++
+     def decode_sync(self, pending: tuple) -> torch.Tensor:
+         """Issue the CPU-pool sync + the H2D result copy for a prior :meth:`decode_submit`,
+         and return the GPU output tensor. With flag-sync the wait is a front-end stream
+diff --git a/python/freetoken/moe/host_banks.py b/python/freetoken/moe/host_banks.py
+index 91e2648..875f8cd 100644
+--- a/python/freetoken/moe/host_banks.py
++++ b/python/freetoken/moe/host_banks.py
+@@ -50,6 +50,9 @@ class HostResidency(str, Enum):
+     PINNED = "pinned"
+     LOCKED = "locked"
+     PAGEABLE = "pageable"
++    # served by TierInfer: an anonymous buffer whose expert rows arrive on first touch from the
++    # FTW shards and leave under a RAM budget (no device address; CPU executor only, like PAGEABLE)
++    TIERED = "tiered"
+ 
+ 
+ _DEFAULT_CHUNK = 8 << 20
+@@ -83,19 +86,34 @@ class HostBank:
+ 
+     The buffer is rounded up to the O_DIRECT block; ``tensor`` views exactly ``nbytes``. ``backing=None`` follows ``FREETOKEN_BANK_CUDA_ALLOC``."""
+ 
+-    __slots__ = ("tensor", "addr", "nbytes", "_buf", "_pinned", "_locked")
++    __slots__ = ("tensor", "addr", "nbytes", "_buf", "_pinned", "_locked", "_tier")
+ 
+     def __init__(self, shape: tuple[int, ...], dtype: torch.dtype,
+-                 *, backing: str | None = None):
++                 *, backing: str | None = None, tier: tuple | None = None):
+         if backing is None:
+             plan = _requested_residency
+             # a plan with non-pinned labels vetoes born-pinned: cudaHostAlloc spends the pin quota the plan exists to save
+             born = _env_born_pinned() and (plan is None or not plan.has_unpinned)
+             backing = "cuda" if born else "mmap"
+-        assert backing in ("mmap", "cuda"), backing
++        assert backing in ("mmap", "cuda", "tierinfer"), backing
+         elsize = torch.empty((), dtype=dtype).element_size()
+         self.nbytes = math.prod(shape) * elsize
+         asize = ((self.nbytes + _BLK - 1) // _BLK) * _BLK
++        self._tier = None
++        if backing == "tierinfer":
++            # ``tier`` = (socket path, tag, logical offset in the FTW region): the buffer is
++            # TierInfer's to fill, per expert row, on first touch; nothing is read here
++            assert tier is not None, "backing='tierinfer' needs tier=(sock, tag, logical_off)"
++            from freetoken.moe.tierinfer_tier import tiered_region
++
++            sock, tag, logical_off = tier
++            self._tier = tiered_region(sock, tag=tag, nbytes=self.nbytes, logical_off=logical_off)
++            self._buf = self._tier.buffer
++            self.addr = self._tier.base
++            self._pinned = False
++            self.tensor = torch.frombuffer(self._buf, dtype=dtype, count=self.nbytes // elsize).view(*shape)
++            self._locked = False
++            return
+         if backing == "cuda":
+             from freetoken.kernel.pinned import alloc_pinned_tensor
+ 
+@@ -118,6 +136,8 @@ class HostBank:
+ 
+     @property
+     def residency(self) -> HostResidency:
++        if self._tier is not None:
++            return HostResidency.TIERED
+         if self._pinned:
+             return HostResidency.PINNED
+         if self._locked:
+@@ -133,6 +153,9 @@ class HostBank:
+         ``FREETOKEN_SKIP_BANK_PIN=1`` makes this a no-op for CPU-only tooling (the FTW converter); never set it when serving, the GPU paths need registered banks."""
+         if self._pinned:
+             return
++        if self._tier is not None:
++            # cudaHostRegister forces every page present: that is a full load, not a tier
++            raise PinFailed("a TierInfer-served bank cannot be pinned (GPU layers keep FreeToken's own banks)")
+         if os.environ.get("FREETOKEN_SKIP_BANK_PIN", "").strip().lower() in ("1", "true", "yes", "on"):
+             return
+         from freetoken.kernel.pinned import host_register
+@@ -147,7 +170,7 @@ class HostBank:
+         """Drop the resident pages; the address space stays valid, the contents become undefined.
+ 
+         For buffers that are done being read (the converter). No-op for born-pinned banks: registered pages cannot be dropped."""
+-        if self._pinned:
++        if self._pinned or self._tier is not None:
+             return
+         self._buf.madvise(mmap.MADV_DONTNEED)
+ 
+@@ -157,6 +180,8 @@ class HostBank:
+         Lock after fill, or the lazy mmap faults+zero-fills every page. A failed lock (RLIMIT_MEMLOCK) warns once and leaves the bank PAGEABLE, which every consumer treats the same."""
+         if self._locked or self._pinned:  # cudaHostRegister already page-locks
+             return
++        if self._tier is not None:
++            return  # mlock would fault the whole bank in; a tiered bank stays a tier
+         global _os_lock_failed
+         if _os_lock_failed:
+             return  # the quota is exhausted for good; skip the syscall spam
+@@ -258,7 +283,9 @@ def requested_residency(labels: list[str] | None):
+ 
+ 
+ def _settle(bank: HostBank, residency: str) -> None:
+-    """Route a filled bank to its residency class (PAGEABLE = leave the plain mmap)."""
++    """Route a filled bank to its residency class (PAGEABLE = leave the plain mmap; TIERED = TierInfer's, untouched)."""
++    if residency == HostResidency.TIERED.value:
++        return
+     if residency == HostResidency.PINNED.value:
+         bank.pin()
+     elif residency == HostResidency.LOCKED.value:
+diff --git a/python/freetoken/moe/tierinfer_tier.py b/python/freetoken/moe/tierinfer_tier.py
+new file mode 100644
+index 0000000..eee05b1
+--- /dev/null
++++ b/python/freetoken/moe/tierinfer_tier.py
+@@ -0,0 +1,41 @@
++"""TierInfer under FreeToken: expert banks served from NVMe on first touch.
++
++Set ``TIERINFER_SOCK`` to a running ``tierinfer serve <ftw-dir> --ram-gb N``
++and pick the CPU-executor layers with ``--moe-cpu-layers``; those layers'
++banks become TierInfer-served buffers (``HostResidency.TIERED``) instead of
++being read into RAM at load. GPU layers keep FreeToken's pinned banks and the
++slot cache. The client code lives in TierInfer (``tierinfer.client``);
++``TIERINFER_SRC`` or PYTHONPATH must make it importable.
++"""
++
++from __future__ import annotations
++
++import os
++import sys
++
++
++def socket_path() -> str | None:
++    p = os.environ.get("TIERINFER_SOCK", "").strip()
++    return p or None
++
++
++def _client():
++    src = os.environ.get("TIERINFER_SRC")
++    if src and src not in sys.path:
++        sys.path.insert(0, src)
++    try:
++        from tierinfer import client
++    except ImportError as exc:  # pragma: no cover - environment
++        raise RuntimeError(
++            "TIERINFER_SOCK is set but tierinfer.client cannot be imported; "
++            "set TIERINFER_SRC=<TierInfer>/src or put it on PYTHONPATH"
++        ) from exc
++    return client
++
++
++def tiered_region(sock: str, *, tag: str, nbytes: int, logical_off: int):
++    return _client().TieredRegion(sock, tag=tag, nbytes=nbytes, logical_off=logical_off)
++
++
++def route(sock: str, layer: int, ids, *, after: bool = True) -> None:
++    _client().session(sock).route(layer, ids, after=after)
+-- 
+2.43.0
+
