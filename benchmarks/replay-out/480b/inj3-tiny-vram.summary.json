@@ -1,0 +1,129 @@
+{
+ "label": "inj3-tiny-vram",
+ "model": "/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf",
+ "trace": "traces/qwen3coder480b-prose-400.jsonl",
+ "tokens_replayed": 8,
+ "predictor_warmup": 30,
+ "run_seconds": 138.68946232000053,
+ "fatal": null,
+ "config": {
+  "ram_bytes": 64424509440,
+  "ram_slots": 2105,
+  "depth": 8,
+  "workers": 8,
+  "pool_slots": 48,
+  "attn_ms": 0.0,
+  "ffn_ms": 0.0,
+  "drop_after_read": true,
+  "cold": false,
+  "inject": "tiny-vram",
+  "vram_slots": 8,
+  "expert_bytes": 30597120,
+  "experts_per_token": 496
+ },
+ "per_token": {
+  "wall_ms_median": 16447.72511949941,
+  "wall_ms_min": 16077.768273999027,
+  "wall_ms_max": 21613.270579000528,
+  "wait_ms_median": 2526.2976404956135,
+  "dev_bytes_median": 13012867072.0,
+  "dev_reads_median": 34953.5,
+  "stream_bytes_median": 285696000.0
+ },
+ "prefetch": {
+  "issued": 249,
+  "used": 110,
+  "useful": 87,
+  "late": 23,
+  "late_wait_seconds": 0.9143503719988075,
+  "cancelled": 139,
+  "stalls": 1387,
+  "stalls_avoided": 2581,
+  "accuracy": 0.44176706827309237,
+  "mean_lead_seconds": 6.473090007520196e-05,
+  "wasted_bytes": 4034027520,
+  "pool_exhausted": 76,
+  "exact_fallbacks": 1387,
+  "timed_out": 0,
+  "orphans_at_end": 0
+ },
+ "cache": {
+  "hits": 2471,
+  "misses": 1497,
+  "hit_rate": 0.6227318548387096,
+  "insertions": 1497,
+  "evictions": 0,
+  "bytes_admitted": 42758553600,
+  "bytes_evicted": 0,
+  "resident_end": 1497,
+  "used_bytes_end": 42758553600,
+  "heap_fallbacks": 0
+ },
+ "stream": {
+  "submitted": 249,
+  "completed": 249,
+  "failed": 0,
+  "cancelled": 0,
+  "bytes_read": 7205068800,
+  "bytes_per_second": 1010694991.6161656,
+  "mean_read_ms": 28.629823554223712,
+  "mean_queue_ms": 0.23862332934832778
+ },
+ "storage": {
+  "reads": 5355,
+  "operations": 16065,
+  "bytes_read": 152692162560,
+  "size_histogram": {
+   "16777216": 16065
+  },
+  "injected_failures": 0
+ },
+ "vram": {
+  "slots": 8,
+  "hits": 13,
+  "misses": 3955,
+  "hit_rate": 0.003276209677419355,
+  "transfers": 3955,
+  "evictions": 3947,
+  "bytes_transferred": 112727162880,
+  "gbps": 26.12191527652002,
+  "mean_transfer_ms": 1.016195348178286
+ },
+ "device": {
+  "name": "md0",
+  "reads": 277419,
+  "bytes": 103922941952,
+  "mean_read_bytes": 374606.4326956697,
+  "await_ms": 1.5066271596393903,
+  "bandwidth_gbps": 0.6978582392895348,
+  "iops": 2000.2848679240935,
+  "members": {
+   "sda": {
+    "reads": 126066,
+    "bytes": 51927011328,
+    "mean_read_bytes": 411903.37861120363,
+    "await_ms": 1.5140957910935542
+   },
+   "sdb": {
+    "reads": 126019,
+    "bytes": 51995930624,
+    "mean_read_bytes": 412603.8980153786,
+    "await_ms": 1.5148509351764416
+   }
+  }
+ },
+ "residency": {
+  "before": 0.26775840111603244,
+  "after": 0.23627183139990746
+ },
+ "verification": {
+  "verified": 3968,
+  "mismatches": 0
+ },
+ "predictor": "adaptive",
+ "adaptive_weights": {
+  "frequency": 0.311322080962983,
+  "persistence": 0.2992900956775959,
+  "transition": 0.389387823359421
+ }
+}

@@ -3,3 +3,12 @@ replay inj3-tiny-vram: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2
   token    0    21613 ms  wait  15239  stalls 463 late   8 useful  25  cache   0/496  dev 13.16 GB  37285 reads @  370 KB  vram 0/496
   token    1    18249 ms  wait   8740  stalls 288 late   3 useful  38  cache 167/496  dev 11.21 GB  31789 reads @  370 KB  vram 0/496
   token    2    17594 ms  wait   6247  stalls 212 late   8 useful  21  cache 255/496  dev 11.46 GB  32667 reads @  368 KB  vram 0/496
+
+inj3-tiny-vram: 8 tokens in 139 s, median 16448 ms/token (min 16078, max 21613)
+  cache hit rate 62.3% (2471/3968), 0 evictions, 1497 resident at end
+  prefetch issued 249, useful 87, late 23, wasted 139 (3.8 GB), stalls 1387, accuracy 44.2%, pool exhausted 76, timed out 0
+  stream 6.7 GB at 0.94 GB/s, 0 failed reads, storage ops 16065
+  md0: 96.8 GB in 277419 reads @ 366 KB, await 1.51 ms, 0.70 GB/s; sda: 48.4 GB in 126066 @ 402 KB; sdb: 48.4 GB in 126019 @ 403 KB
+  per token: median 12.12 GB from md0 in 34954 reads
+  vram: 0.3% hit (13/3968), 3955 transfers, 105.0 GB at 26.1 GB/s
+  verified 3968 deliveries against exact reads, 0 mismatches; residency 26.8% -> 23.6%

@@ -142,10 +142,113 @@ of the *next* token's experts, as it was on GLM.
 
 ## 4. TierInfer replay — real routing, real files, real caches, no compute
 
-_(CP-6/7/8: cache-only, prefetch depth 8/16, emulated compute, VRAM tier,
-150 GB RAM tier, page cache allowed; per arm: cache hit rate, prefetch
-useful/late/wasted/stalls, md0 GB and reads per token against native, sda
-request sizes, VRAM hit rate and transfer rate)_
+`benchmarks/replay.py`: the captured routing is replayed layer by layer
+through the real `Prefetcher` → `ExpertStreamer` (8 workers, `preadv` into
+pooled buffers) → `ExpertCache` (holding the bytes) against the six shards
+on md0. **What is real:** every read, every byte, every hit, miss, eviction,
+prefetch and stall, and every device counter. **What is absent:** compute —
+no kernel consumes the bytes, so a token's time here is its I/O wait, and
+the `comp` arm adds sleeps of 4 ms before and 4 ms after each layer
+(~500 ms per token, an *assumed* compute time; the model cannot be run
+RAM-resident on this host to measure a real one) so that prefetch has
+something to overlap. `--drop-after-read` evicts every delivered range from
+the page cache, so TierInfer's cache is the only RAM tier and every miss it
+reports is a read the device served; the one arm without it shows what
+double caching looks like. Predictor warmed on 50 tokens, then tokens
+50–199 replayed; RAM tier 100 GiB (`autoconfig`'s share) or 150 GiB (close
+to the ~180 GB page cache native had); cold start.
+
+### 4.1 The arms
+
+| arm (prose unless noted) | ms/token median | of which I/O wait | RAM hit | md0 GB/token | md0 reads/token | md0 KB | sda KB | prefetch issued / useful / late / wasted | wasted GB | stalls/token |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| **native `-ngl 0`, cold median (§1)** | 4 149 (= 1/0.241) | — | page cache ≈ 90 % | **1.82** | **74 098** | 24 | 131 | — | — | — |
+| cache only, depth 0, 100 GiB | 1 576 | 1 382 | 87.6 % | **1.17** | **3 408** | 361 | 403 | — | 0 | 61 |
+| prefetch depth 8, 100 GiB | 2 010 | 1 794 | 84.9 % | 1.62 | 4 695 | 363 | 404 | 5 938 / 560 / 1 567 / 3 811 | 102 | 61 |
+| prefetch depth 16, 100 GiB | 2 067 | 1 831 | 84.4 % | 1.77 | 5 100 | 364 | 404 | 11 567 / 958 / 1 799 / 8 810 | 233 | 59 |
+| prefetch depth 8 + emulated compute | 2 466 (incl. 496 sleep) | 1 732 | 84.7 % | 1.64 | 4 820 | 362 | 404 | 6 306 / 1 039 / 1 242 / 4 025 | 108 | 61 |
+| prefetch depth 8 + VRAM tier (792 slots) | 3 147 | 1 771 (+1 100 VRAM) | 84.7 % | 1.67 | 4 862 | 362 | 403 | 6 219 / 559 / 1 673 / 3 987 | 107 | 61 |
+| prefetch depth 8, **150 GiB** | **1 147** | 1 033 | **91.6 %** | **0.63** | **1 826** | 365 | 403 | 888 / 140 / 155 / 593 | 16 | 40 |
+| prefetch depth 8, 100 GiB, **code trace** | 3 661 | 3 303 | 73.5 % | 3.21 | 9 360 | 360 | 403 | 5 730 / 768 / 968 / 3 994 | 106 | 120 |
+| prefetch depth 8, 100 GiB, page cache allowed | 1 367 | 1 331 | 82.5 % | 0.79 | 2 315 | 365 | 404 | 7 873 / 957 / 2 139 / 4 777 | 129 | 66 |
+
+Every arm ran to completion; no arm delivered a byte that differed from the
+file (the verification arms in §6 check that on the same path).
+
+### 4.2 What the arms say
+
+**Against native, the RAM tier holds up and the I/O shape is the point.**
+With a 100 GiB cache — *smaller* than the ~180 GB of page cache native
+enjoyed — TierInfer's cache-only arm reads **36 % fewer bytes per token in
+22× fewer operations**: 1.17 GB in 3 408 reads of 361 KB against 1.82 GB in
+74 098 reads of 24 KB. With 150 GiB the gap widens to **65 % fewer bytes in
+40× fewer operations** (0.63 GB, 1 826 reads). The reads are expert-sized
+`preadv` calls of 8.8–12.9 MB (storage layer: 9.5 MB per operation); the
+kernel splits them at `max_sectors_kb=512` into the ~361 KB md sees, and md
+passes them on at ~403 KB. So on TierInfer's path **md merges almost
+nothing** (361 → 403 KB) because there is nothing left to merge; on the
+native path it merges fivefold (24 → 131 KB) and still leaves the drives
+with requests a third the size. That is §15's question answered: the
+locality is TierInfer's, the merging is md's, and they are separable in the
+counters.
+
+**The device is still not the limit.** md0 delivered 0.74–0.78 GB/s in the
+100 GiB arms and 0.83 in the 150 GiB one, against 2 GB/s measured capacity,
+with await 1.4–2.0 ms. The limit is the exact path: a miss nobody prefetched
+is a *synchronous, single-threaded* `pread` of ~30 MB (22 ms), and at 61
+misses per token that alone is ~1.35 s of the 1.38 s wait. The streamer's
+eight workers sit idle for it. This is the largest lever found by the
+validation, and it is a correctness-free one — the misses of a layer are
+all known at once and can be read together. It was applied after these
+arms ran (§4.3).
+
+**Prefetch without compute is a negative result, and the numbers say why.**
+Depth 8 issues 5 938 speculative reads for 150 tokens; 560 land in time,
+1 567 are still reading when the token asks (so the token waits on them
+anyway), 3 811 are never used and cost 102 GB. Waste evicts useful entries
+(hit rate 87.6 → 84.9 %) and the wasted reads share the device with the
+demand reads. Depth 16 doubles the waste and helps nothing. Giving the
+prefetcher ~500 ms of emulated compute per token to hide behind nearly
+doubles the useful count (560 → 1 039) and cuts late ones by a fifth — and
+recovers 60 ms of wait out of 1 794. At recall@16 of 67 % (§5) two of three
+guesses are wrong by construction, and the useful third mostly names experts
+the cache would have held anyway. **Prediction earns nothing here that
+residency does not already provide; it only costs.** On GLM (`POLICY.md`)
+the simulator said the dial was worth 1 %; on the 480B, measured, it is
+worth less than zero without compute to overlap and roughly zero with it.
+
+**The 150 GiB arm is where TierInfer should be compared, and it wins on
+I/O.** 91.6 % hit, 0.63 GB and 1 826 reads per token, 40 stalls, 1.15 s
+of I/O per token — against native's 1.82 GB and 74 k reads *with more RAM*.
+What this does not say is tokens per second: there is no compute in the
+loop and no loader to put one there (§7).
+
+**The VRAM tier does real work and costs real time.** 792 slots (the
+goal-9 budget at 4 096 context, reserve measured), 22.1 % hit rate on
+routing that spreads over 9 920 experts, 57 923 transfers at 26.5 GB/s
+(0.99 ms each). Staging the bytes into pinned memory and copying them adds
+~1.1 s per token here because every transfer is synchronous and on the
+token's path; in a real loop the copy would overlap the previous layer's
+compute, and the 22 % hit rate would be the number that mattered — it says
+a 20 GB VRAM working set catches a fifth of this model's expert traffic,
+against the 76–79 % it caught on GLM's 128 experts per layer.
+
+**The prompt class doubles everything.** Code routing at 100 GiB: 73.5 %
+hit, 3.21 GB and 9 360 reads per token, 120 stalls — twice prose on every
+axis, exactly as the trace's locality (§3) predicted and as native's own
+0.39 vs 0.72 t/s showed.
+
+**Double caching is measurable.** With the page cache free to help, a
+TierInfer miss is often a page-cache hit: md0 sees 0.79 GB per token where
+the same arm with `--drop-after-read` saw 1.62 GB, the streamer reports
+2.87 GB/s (RAM speed for part of it), and 27.7 % of the model is resident in
+the page cache at the end. A deployment that does not evict what it has
+copied pays twice for RAM and measures nothing about its own cache.
+
+### 4.3 After batching the demand reads
+
+_(chain6 running: the cache-only and prefetch arms again with a layer's
+misses read through the streamer concurrently; numbers land here.)_
 
 ## 5. Predictor on 480B routing
 
@@ -180,9 +283,27 @@ against real reads.
 
 ## 6. Failure behaviour
 
-_(CP-8: always-wrong predictor, injected read failures, two-slot pool,
-eight-slot VRAM tier, unresolvable expert — every delivery verified against
-an exact read)_
+Same replay path, every delivered expert compared byte for byte with an
+exact read (`safety.exact_load`), predictor warmed on 30 tokens so that the
+speculative path is actually exercised (the first pass without warm-up
+issued no speculation at all and two injections did not fire — recorded in
+`docs/CHECKPOINTS.md` CP-8a).
+
+| injection | what happened | delivered / mismatches |
+|---|---|--:|
+| none (`verify-d8`, cold) | 3 tokens, every expert from the file | 1 488 / **0** |
+| predictor always wrong (experts 144–159) | 397 speculative reads, 10 useful, 384 wasted (10.9 GB), 1 838 exact fallbacks, pool exhausted 444× | 3 968 / **0** |
+| one speculative read in fifty fails (`EIO`) | 15 injected → 15 failed loads → 15 exact fallbacks; 270 issued, 93 useful | 3 968 / **0** |
+| two stream buffers | pool exhausted 165×, speculation throttled to 29 issued | 3 968 / **0** |
+| eight VRAM slots | _(rerun pending; first run lost its counters to a harness bug)_ | 3 968 / **0** |
+| an expert whose ranges cannot be resolved (routed by token 1) | token 0 delivered (496 / 0), then **`FATAL: explicit failure: injected: expert (0, 93) cannot be resolved to byte ranges`** and the run ended | 496 / **0** |
+
+The two outcomes the scope allows are the two observed: wrong guesses, failed
+speculative reads and exhausted pools degrade to slower exact reads with the
+right bytes; an expert the index cannot address stops the run with a message
+naming it. Nothing was served from a stale buffer, nothing was silently
+skipped. A speculative guess about an unresolvable expert is skipped and
+counted (`unmappable`), never raised.
 
 ## 7. What could not be measured, and why
 
