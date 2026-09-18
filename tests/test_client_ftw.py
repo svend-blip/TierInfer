@@ -109,7 +109,7 @@ def test_a_logical_buffer_is_served_row_by_row_from_the_shards(ftw):
         assert s.faults_expert >= 1 and s.bytes_copied >= EXPERTS * (row_gu + row_dn), s
         # after the first touch the whole expert (both rows, both buffers) was present
         assert s.faults_expert < 2 * EXPERTS + 2, s
-        assert s.routed == 5 and s.hits >= 4, s          # 2 + 2 + 1 distinct; all resident
+        assert s.routed == 5 and s.hits == 3 and s.misses == 2, s   # layer 0 resident, layer 1 never mapped
         assert s.tokens >= 1
         assert s.unmaps == 2 and res["refused"] == 0
         assert all(m.logical_off is not None for m in server.mappings)
