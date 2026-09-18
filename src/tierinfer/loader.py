@@ -521,6 +521,7 @@ class LoaderServer:
     def __init__(self, index, *, ram_bytes: int, workers: int = 8, depth: int = 0,
                  telemetry: Telemetry | None = None, floor_chunk: int = 16 * MB,
                  predictor: Predictor | None = None, verbose: bool = True, align: int = 0,
+                 adapt_depth: bool = False, max_depth: int = 32,
                  drop_page_cache: bool = True) -> None:
         self.source = as_source(index)
         self.index = index
@@ -528,6 +529,15 @@ class LoaderServer:
         self.ram_bytes = ram_bytes
         self.workers = workers
         self.depth = depth
+        # Live adaptation of the prefetch depth from what prefetch actually did
+        # (DoD: the policy dial is measured, not simulated). Every window of
+        # tokens: a low yield halves the depth, a high yield with few late
+        # arrivals doubles it, within [1, max_depth]; depth 0 stays off.
+        self.adapt_depth = adapt_depth and depth > 0
+        self.max_depth = max(depth, max_depth)
+        self._depth_window = 8
+        self._depth_mark = (0, 0, 0, 0)      # issued, useful, late, wasted at the last decision
+        self.depth_changes: list[tuple[int, int, float]] = []   # (token, new depth, yield)
         self.floor_chunk = floor_chunk
         self.verbose = verbose
         self.tel = telemetry
@@ -603,6 +613,23 @@ class LoaderServer:
 
     def close(self) -> None:
         self.stop()
+        # let clients see the server go: a client whose eviction channel closes
+        # falls back to serving its own faults (tierinfer.client)
+        with self._lock:
+            conns = list(self._evict_conns.values())
+            self._evict_conns.clear()
+        for c in conns:
+            try:
+                c.shutdown(socket.SHUT_RDWR)
+                c.close()
+            except OSError:
+                pass
+        for m in self.mappings:
+            m.dead = True
+            try:
+                os.close(m.uffd)
+            except OSError:
+                pass
         self._pool.shutdown(wait=False)
         self.scheduler.close()
         if self.tel:
@@ -1165,6 +1192,25 @@ class LoaderServer:
                 if self.scheduler.submit(key, layer=key[0], token=token, priority=Priority.BACKGROUND_HOT):
                     self.stats.prefetch_issued += 1
 
+    def _adapt_depth(self) -> None:
+        s = self.stats
+        now = (s.prefetch_issued, s.prefetch_useful, s.prefetch_late, s.prefetch_wasted)
+        issued, useful, late, wasted = (b - a for a, b in zip(self._depth_mark, now))
+        self._depth_mark = now
+        if issued < self._depth_window:            # too few guesses to judge: leave it
+            return
+        yield_ = useful / issued
+        late_share = late / issued
+        old = self.depth
+        if yield_ < 0.35:
+            self.depth = max(1, self.depth // 2)
+        elif yield_ > 0.7 and late_share < 0.25:
+            self.depth = min(self.max_depth, self.depth * 2)
+        if self.depth != old:
+            self.depth_changes.append((s.tokens, self.depth, yield_))
+            self._say(f"prefetch depth {old} -> {self.depth} (window: {issued} issued, "
+                      f"{useful} useful, {late} late, {wasted} wasted)")
+
     def _served_layers(self) -> list[int]:
         """The MoE layers some client has a mapping for (FreeToken: only its tiered layers)."""
         n = len(self.mappings)
@@ -1266,8 +1312,10 @@ class LoaderServer:
                 routing[l].append(e)
             self.predictor.observe(dict(routing))
             self.stats.tokens += 1
+            if self.adapt_depth and self.stats.tokens % self._depth_window == 0:
+                self._adapt_depth()
             if self.tel:
-                self.tel.event("token", **self._token_delta())
+                self.tel.event("token", **self._token_delta(), depth=self.depth)
             if self.verbose and (self.stats.tokens <= 3 or self.stats.tokens % 20 == 0):
                 s = self.stats
                 self._say(f"token {s.tokens}: hit {s.hit_rate:.1%} ({s.hits}/{s.hits + s.misses}) "

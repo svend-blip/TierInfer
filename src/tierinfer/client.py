@@ -34,8 +34,10 @@ import errno
 import fcntl
 import mmap
 import os
+import select
 import socket
 import struct
+import sys
 import threading
 
 # userfaultfd — x86-64 numbers; the ioctl numbers are architecture-independent
@@ -45,6 +47,8 @@ _UFFD_API = 0xAA
 _UFFDIO_API = 0xC018AA3F
 _UFFDIO_REGISTER = 0xC020AA00
 _UFFDIO_REGISTER_MODE_MISSING = 1
+_UFFDIO_COPY = 0xC028AA03
+_UFFD_EVENT_PAGEFAULT = 0x12
 PAGE = mmap.PAGESIZE
 
 _libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
@@ -80,9 +84,12 @@ def open_userfaultfd() -> int:
 class _Session:
     """The two sockets to one server, shared by every region of this process."""
 
-    def __init__(self, sock_path: str) -> None:
+    def __init__(self, sock_path: str, model_dir: str | None = None) -> None:
         self.path = sock_path
+        self.model_dir = model_dir
         self.pid = os.getpid()
+        self.fallback = False                 # the server went away; this process serves its own faults
+        self.fallback_pages = 0
         self.ctl = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.ctl.connect(sock_path)
         self.ctl.sendall(f"HELLO ctl {self.pid}\n".encode())
@@ -158,17 +165,83 @@ class _Session:
                     self.evictions += 1
             elif line == "PING":
                 self.evict.sendall(b"PONG\n")
+        # The eviction channel closed: the server is gone. Nothing will answer
+        # the next fault, and a thread that faults then hangs for good. So
+        # this process answers its own faults from the checkpoint from here
+        # on — page by page, exact, uncached, loudly — rather than stall or
+        # hand out zeroes. Correct and slow beats wrong or stuck.
+        with self.lock:
+            live = [r for r in self.regions.values() if not r.closed]
+        if live:
+            self._start_fallback()
+
+    def _start_fallback(self) -> None:
+        if self.fallback:
+            return
+        self.fallback = True
+        print(f"tierinfer-client: the server at {self.path} went away; serving faults from the "
+              f"checkpoint myself ({self.model_dir or 'no model_dir: faults will stall'})", file=sys.stderr, flush=True)
+        if self.model_dir is None:
+            return
+        from .ftw import FTWIndex
+        self._ftw = FTWIndex(self.model_dir)
+        self._fds: dict = {}
+        t = threading.Thread(target=self._fallback_loop, daemon=True, name="tierinfer-fallback")
+        t.start()
+
+    def _read_page(self, region: "TieredRegion", off: int) -> bytes:
+        logical = region.logical_off + off
+        out = bytearray(PAGE)
+        pos = 0
+        for br in self._ftw.physical("fallback", logical, min(PAGE, region.nbytes - off) if off < region.nbytes else 0):
+            fd = self._fds.get(br.path)
+            if fd is None:
+                fd = self._fds[br.path] = os.open(br.path, os.O_RDONLY)
+            chunk = os.pread(fd, br.nbytes, br.file_offset)
+            out[pos:pos + len(chunk)] = chunk
+            pos += len(chunk)
+        return bytes(out)
+
+    def _fallback_loop(self) -> None:
+        poller = select.poll()
+        poller.register(self.uffd, select.POLLIN)
+        while True:
+            poller.poll(1000)
+            try:
+                msg = os.read(self.uffd, 32)
+            except BlockingIOError:
+                continue
+            except OSError:
+                return
+            if len(msg) < 32 or msg[0] != _UFFD_EVENT_PAGEFAULT:
+                continue
+            addr = struct.unpack_from("<Q", msg, 16)[0] & ~(PAGE - 1)
+            with self.lock:
+                r = self._owner(addr, PAGE)
+            if r is None:
+                continue
+            data = self._read_page(r, addr - r.base)
+            src = ctypes.cast(ctypes.c_char_p(data), ctypes.c_void_p).value
+            req = bytearray(struct.pack("<QQQQq", addr, src, PAGE, 0, 0))
+            try:
+                fcntl.ioctl(self.uffd, _UFFDIO_COPY, req)
+                self.fallback_pages += 1
+            except OSError as e:
+                if e.errno != errno.EEXIST:      # already present (a racing thread): fine
+                    print(f"tierinfer-client: fallback copy at {addr:#x}: {e}", file=sys.stderr, flush=True)
 
 
 _sessions: dict[str, _Session] = {}
 _sessions_lock = threading.Lock()
 
 
-def session(sock_path: str) -> _Session:
+def session(sock_path: str, model_dir: str | None = None) -> _Session:
     with _sessions_lock:
         s = _sessions.get(sock_path)
         if s is None or s.pid != os.getpid():
-            s = _sessions[sock_path] = _Session(sock_path)
+            s = _sessions[sock_path] = _Session(sock_path, model_dir)
+        elif model_dir and s.model_dir is None:
+            s.model_dir = model_dir
         return s
 
 
@@ -176,7 +249,8 @@ class TieredRegion:
     """One buffer standing in for ``nbytes`` of the model's logical region at
     ``logical_off``, materialised per expert by the server on first touch."""
 
-    def __init__(self, sock_path: str, *, tag: str, nbytes: int, logical_off: int) -> None:
+    def __init__(self, sock_path: str, *, tag: str, nbytes: int, logical_off: int,
+                 model_dir: str | None = None) -> None:
         if nbytes <= 0:
             raise ClientError("a region needs a positive size")
         if " " in tag:
@@ -186,7 +260,7 @@ class TieredRegion:
         self.logical_off = logical_off
         self.alen = (nbytes + PAGE - 1) & ~(PAGE - 1)
         self.closed = False
-        self.session = session(sock_path)
+        self.session = session(sock_path, model_dir)      # model_dir: where to read from if the server dies
         base = _libc.mmap(None, self.alen, mmap.PROT_READ | mmap.PROT_WRITE,
                           mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS | 0x4000, -1, 0)   # 0x4000 = MAP_NORESERVE
         if base in (None, ctypes.c_void_p(-1).value):

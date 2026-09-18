@@ -34,11 +34,18 @@ regions, out = {}, []
 for step in plan:
     if step[0] == "map":
         _, tag, nbytes, off = step
-        regions[tag] = TieredRegion(sock, tag=tag, nbytes=nbytes, logical_off=off)
+        regions[tag] = TieredRegion(sock, tag=tag, nbytes=nbytes, logical_off=off, model_dir=os.environ.get("TI_MODEL_DIR"))
     elif step[0] == "read":
+        # touch through a foreign call, which drops the GIL while the page
+        # faults — as FreeToken's C++ pool threads do; a Python-level copy
+        # would hold the GIL and starve any Python thread serving the fault
         _, tag, a, n = step
-        mv = regions[tag].memoryview()
-        out.append(hashlib.blake2b(bytes(mv[a:a + n]), digest_size=8).hexdigest())
+        import ctypes
+        libc = ctypes.CDLL(None)
+        libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t]
+        buf = (ctypes.c_char * n)()
+        libc.memcpy(buf, regions[tag].base + a, n)
+        out.append(hashlib.blake2b(bytes(buf), digest_size=8).hexdigest())
     elif step[0] == "route":
         _, tag, layer, ids = step
         regions[tag].route(layer, ids)
@@ -50,7 +57,7 @@ for step in plan:
     elif step[0] == "close":
         regions.pop(step[1]).close()
 s = session(sock)
-print(json.dumps({"out": out, "evictions": s.evictions, "refused": s.refused}))
+print(json.dumps({"out": out, "evictions": s.evictions, "refused": s.refused, "fallback": s.fallback, "fallback_pages": s.fallback_pages}))
 '''
 
 
@@ -68,10 +75,10 @@ def _start(server, sock):
     return t
 
 
-def _child(sock, plan, timeout=60):
+def _child(sock, plan, timeout=60, env=None):
     src = str(Path(__file__).resolve().parent.parent / "src")
     r = subprocess.run([sys.executable, "-c", CHILD, src, sock, json.dumps(plan)],
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, timeout=timeout, env=env)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout.strip().splitlines()[-1]), r.stderr
 
@@ -204,3 +211,43 @@ def test_routing_after_the_fact_prefetches_for_the_next_step(ftw):
         assert s.faults_expert == 0, s                       # nothing was ever faulted in
     finally:
         server.close()
+
+
+def test_a_server_that_dies_leaves_a_client_that_serves_itself(ftw, tmp_path):
+    """TI-FT-012: the runtime must continue correctly or fail explicitly. With
+    the server gone, faults would stall forever; the client answers them
+    from the checkpoint instead — exact bytes, no cache, and it says so."""
+    ix, data = ftw
+    sock = _sock()
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, verbose=False,
+                          drop_page_cache=False, floor_chunk=4096)
+    _start(server, sock)
+    gu = ix.banks[0]["gate_up_packed"]
+    dn = ix.banks[0]["down_packed"]
+    row_gu, row_dn = gu.nbytes // EXPERTS, dn.nbytes // EXPERTS
+    plan = [["map", "gu0", gu.nbytes, gu.global_off], ["map", "dn0", dn.nbytes, dn.global_off]]
+    plan += [["read", "gu0", 0, row_gu], ["sleep", 2.0]]                   # served; then the server dies
+    for e in range(1, EXPERTS):
+        plan += [["read", "gu0", e * row_gu, row_gu], ["read", "dn0", e * row_dn, row_dn]]
+    plan += [["close", "gu0"], ["close", "dn0"]]
+    import os as _os
+    env = dict(_os.environ, TI_MODEL_DIR=str(ix.directory))
+
+    def killer():
+        for _ in range(300):
+            if server.stats.faults_expert >= 1:
+                break
+            time.sleep(0.01)
+        time.sleep(0.3)
+        server.close()
+
+    t = threading.Thread(target=killer, daemon=True)
+    t.start()
+    res, err = _child(sock, plan, env=env)
+    t.join(5)
+    want = [_digest(data, gu.global_off, row_gu)]
+    for e in range(1, EXPERTS):
+        want += [_digest(data, gu.global_off + e * row_gu, row_gu), _digest(data, dn.global_off + e * row_dn, row_dn)]
+    assert res["out"] == want, err
+    assert res["fallback"] is True and res["fallback_pages"] >= 1, (res, err)
+    assert "went away" in err

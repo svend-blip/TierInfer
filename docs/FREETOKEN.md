@@ -77,6 +77,17 @@ is shifted by one. Medians over a run are unaffected.
   device counters. Results: `benchmarks/freetoken-out/` and the checkpoint
   that cites them.
 
+## If the server goes away
+
+A fault nobody answers stalls its thread for good, so the client watches
+its eviction channel: when it closes, the process answers its own faults
+from the checkpoint from then on — page by page, exact, uncached, and it
+says so on stderr (`tierinfer-client: the server … went away`). Slow and
+correct rather than stuck or zero-filled. The bank passes the checkpoint
+directory for this (`HostBank(..., tier=(sock, name, offset, model_dir))`);
+without it the client can only report. `tests/test_client_ftw.py` kills
+the server mid-run and checks every later row is still the shard's bytes.
+
 ## Measured (CP-13, Flash-Next NVFP4, 12 of 48 MoE layers on the CPU executor)
 
 | arm | load | 95 + 63 tokens | FreeToken decode | inference I/O |

@@ -130,6 +130,16 @@ checkpoint's expert banks to a runtime speaking the protocol from Python
 byte region (`MAP <tag> <base> <len> <logical_off>`) and one expert's rows
 live in one buffer per bank, all materialised on the first touch of any.
 
+## The prefetch depth, live
+
+`--adapt-depth` (with `--depth N > 0`) re-decides the depth every eight
+tokens from what prefetch achieved in that window: a yield (useful ÷
+issued) under 35 % halves it, over 70 % with fewer than a quarter late
+doubles it, within [1, 32]; fewer than eight guesses in a window change
+nothing. Each change is logged and the current depth rides on every token
+event. This is the policy dial the DoD asks to be measured rather than
+simulated; `tests/test_loader_policy.py` drives it.
+
 ## Known limits
 
 - One server serves one model; several runtimes may share it.
