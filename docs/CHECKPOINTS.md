@@ -416,11 +416,11 @@ inferred from bytes read.
   harness runs with the fix are queued: GLM ×3, then 480B ×3).
 - **Next:** CP-12 with the harness numbers.
 
-## CP-12 — the loader under llama.cpp on the 480B (live A/B, preliminary: run 1 of 3)
+## CP-12 — the loader under llama.cpp on the 480B (live A/B, three runs each)
 
 - **Revision:** `39ba8ce` (loader `11a9456` + `e00bf01` + `39ba8ce`);
-  harness `82d6a98`. Run 1 of each arm below; runs 2–3 are in flight and
-  will be appended to this checkpoint's table in `VALIDATION-480B.md` §4.4.
+  harness `82d6a98`/`d021476`. Three runs per arm; the full table is
+  `benchmarks/loader-out/q480b-ncmoe60.md` (`benchmarks/480b/harness_table.py`).
 - **What ran:** `benchmarks/loader_ab.py`, llama-server b10482,
   `-ngl 99 -ncmoe 60 -fa on -c 4096 -t 32 --no-warmup`, the 111-token
   prompt, 32 greedy tokens, cold page cache before each run (`0.00 %`
@@ -445,16 +445,19 @@ inferred from bytes read.
   320 experts gone, 320 of them were resident`.
 - **Result — correctness:** the 32 generated tokens are **identical**
   between the arms (`q480b-ncmoe60-{native,loader}-1.json`, `content`).
-- **Result — performance, run 1:**
+- **Result — performance, three runs each (median, range):**
 
-  | arm | load s | prompt t/s | gen t/s | infer GB | infer reads | mean KB | await ms |
+  | arm | load s | prompt t/s | gen t/s | infer GiB | infer reads | mean KB | await ms |
   |---|--:|--:|--:|--:|--:|--:|--:|
-  | native | 193 | 0.774 | 0.437 | 248.1 | 2 440 559 | 107 | 4.9 |
-  | loader (150 GB tier) | 37 | 0.750 | **0.622** | 157.9 | 427 924 | 387 | 2.0 |
+  | native | 192 | 0.767 | **0.467** (0.437–0.481) | 246.1 | 2 255 392 | 107–116 | 4.8 |
+  | loader (150 GB tier) | 37 | 0.750 | **0.647** (0.622–0.668) | 157.9 | 426 882 | 387 | 2.0 |
 
-  Generation **42 % faster** than native at equal prompt speed, with 36 %
-  fewer bytes and 5.7× fewer read requests from md0, each 3.6× larger.
-  Load is 5× faster because nothing is populated up front.
+  Generation **39 % faster** than native (medians; the worst loader run beats
+  the best native run by 29 %) at equal prompt speed, with 36 % fewer bytes
+  and 5.3× fewer read requests from md0, each 3.4× larger. Load is 5× faster
+  because nothing is populated up front. The loader's three runs are
+  I/O-identical (157.9 GiB, 426–428 k reads; 93.6 % hit rate in each), so
+  the spread in t/s (0.622–0.668) is compute-side noise, not the tier.
 - **From the loader's telemetry** (`q480b-ncmoe60-loader-1.telemetry.jsonl`):
   the prompt batch routed 5 322 distinct experts, 5 100 misses, 150 GB
   copied in 148 s (1.0 GB/s, storage-bound — the same 0.75–1.0 GB/s ceiling
@@ -466,10 +469,9 @@ inferred from bytes read.
   `/proc/<pid>/pagemap`, not re-copied), 387 repaired; 0 repeat faults,
   0 EAGAIN, 0 read retries; 28 UNMAP messages, 5 851 experts forgotten
   (teardown included).
-- **Acceptance IDs moved (pending runs 2–3):** TI-LLAMA-011 → VERIFIED on
-  run 1 (loader ≥ native, tokens identical); TI-480B-009/010/011/012 →
-  VERIFIED (loader) on run 1. TI-LLAMA-012 (repeatability) stays
-  IN_PROGRESS until runs 2–3 are in.
+- **Acceptance IDs moved:** TI-LLAMA-004/005/009/011/012 → VERIFIED;
+  TI-480B-009/010/011/012 → VERIFIED (loader); TI-PERF repeated-runs
+  criterion met (three cold runs per arm, tokens identical in all six).
 - **GLM harness (from CP-11's queue), for the record:** `glm-ngl0.md` —
   native 0.310 / 0.107 / 0.325 t/s, loader run 1 0.324 t/s with identical
   tokens; loader runs 2 and 3 **stood aside** (the shim found a stale socket
