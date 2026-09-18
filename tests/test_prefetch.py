@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+import time
 
 import pytest
 
@@ -238,3 +240,114 @@ def test_a_predictor_with_no_opinion_issues_nothing_and_still_works(parts, model
     off = 3 * EXPERT
     assert got[(0, 3)] == modelfile.read_bytes()[off:off + EXPERT]
     assert p.stats.stalls == 1
+
+
+# -- added 2026-09-18 with the audit's repairs ---------------------------
+
+
+def _rig(modelfile, predictor, depth=2, slots=8):
+    b = StorageBackend(modelfile)
+    s = ExpertStreamer(b, BufferPool(EXPERT, slots), workers=2)
+    t = ExpertTracker()
+    c = ExpertCache(64 * EXPERT, t)
+    return b, s, t, Prefetcher(s, c, predictor, ranges_for, tracker=t, depth=depth)
+
+
+class _Fixed(Predictor):
+    name = "fixed"
+
+    def __init__(self, experts):
+        self.experts = list(experts)
+
+    def observe(self, routing):
+        pass
+
+    def score(self, layer, sofar):
+        return {e: 1.0 for e in self.experts}
+
+
+def test_the_tracker_hears_about_a_token_once(modelfile):
+    """One entry per token, holding everything the token routed to — not one
+    entry per expert admitted, which is what the first version recorded."""
+    b, s, t, p = _rig(modelfile, _Fixed([0, 1]))
+    with b, s:
+        p.on_routing(0, [0, 1, 2])
+        p.on_routing(1, [3, 4])
+        assert t.tokens_seen == 0
+        p.end_token()
+        assert t.tokens_seen == 1
+        assert t.last_token_experts() == {(0, 0), (0, 1), (0, 2), (1, 3), (1, 4)}
+        assert t.activation_rate((0, 2)) == 1.0
+
+
+def test_a_speculative_range_that_cannot_be_resolved_is_skipped_and_counted(modelfile):
+    def flaky(key):
+        if key == (0, 1):
+            raise KeyError("no such expert")
+        return ranges_for(key)
+    b = StorageBackend(modelfile)
+    s = ExpertStreamer(b, BufferPool(EXPERT, 8), workers=2)
+    p = Prefetcher(s, ExpertCache(64 * EXPERT), _Fixed([1, 2]), flaky, depth=2)
+    with b, s:
+        issued = p.before_layer(0, {})
+        assert issued == [(0, 2)]
+        assert p.stats.unmappable == 1
+        # the routed path does not skip: the caller hears about it
+        with pytest.raises(KeyError):
+            p.on_routing(0, [1])
+
+
+def test_dropping_speculation_never_waits_and_leaks_nothing(modelfile):
+    """A load mid-read is orphaned, not waited on; its buffer comes back later."""
+    b, s, t, p = _rig(modelfile, _Fixed(list(range(8))), depth=8, slots=8)
+    with b, s:
+        p.before_layer(0, {})
+        t0 = time.perf_counter()
+        dropped = p.drop_unused()
+        assert time.perf_counter() - t0 < 1.0
+        assert dropped == 8
+        deadline = time.perf_counter() + 5
+        while p.orphans and time.perf_counter() < deadline:
+            time.sleep(0.01)
+            p._reap()
+        assert p.orphans == 0
+        assert s.pool.in_use == 0
+
+
+def test_a_prefetch_that_had_not_landed_is_counted_late(modelfile):
+    class Slow(StorageBackend):
+        def fd_for(self, r):
+            if threading.current_thread().name.startswith("tierinfer-stream"):
+                time.sleep(0.2)
+            return super().fd_for(r)
+    b = Slow(modelfile)
+    s = ExpertStreamer(b, BufferPool(EXPERT, 8), workers=2)
+    p = Prefetcher(s, ExpertCache(64 * EXPERT), _Fixed([0]), ranges_for, depth=1)
+    with b, s:
+        p.before_layer(0, {})
+        out = p.on_routing(0, [0])              # arrives while the read is sleeping
+        assert out[(0, 0)] == modelfile.read_bytes()[:EXPERT]
+        assert p.stats.used == 1 and p.stats.late == 1 and p.stats.useful == 0
+        assert p.stats.late_wait_seconds > 0.1
+        assert p.stats.stalls == 0
+
+
+def test_a_wait_timeout_falls_back_to_the_exact_path(modelfile):
+    class Stuck(StorageBackend):
+        def fd_for(self, r):
+            if threading.current_thread().name.startswith("tierinfer-stream"):
+                time.sleep(0.5)
+            return super().fd_for(r)
+    b = Stuck(modelfile)
+    s = ExpertStreamer(b, BufferPool(EXPERT, 8), workers=2)
+    p = Prefetcher(s, ExpertCache(64 * EXPERT), _Fixed([0]), ranges_for, depth=1,
+                   wait_timeout=0.05)
+    with b, s:
+        p.before_layer(0, {})
+        out = p.on_routing(0, [0])
+        assert out[(0, 0)] == modelfile.read_bytes()[:EXPERT]
+        assert p.stats.timed_out == 1 and p.stats.exact_fallbacks == 1
+        assert p.orphans == 1
+        time.sleep(0.6)
+        p._reap()
+        assert p.orphans == 0 and s.pool.in_use == 0

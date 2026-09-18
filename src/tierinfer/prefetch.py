@@ -67,6 +67,7 @@ class PrefetchStats:
     late: int = 0
     late_wait_seconds: float = 0.0
     timed_out: int = 0
+    unmappable: int = 0
 
     @property
     def useful(self) -> int:
@@ -140,7 +141,14 @@ class Prefetcher:
             key = (layer, expert)
             if key in self.cache or key in self._inflight:
                 continue
-            ranges = list(self.ranges_for(key))
+            try:
+                ranges = list(self.ranges_for(key))
+            except Exception:                   # noqa: BLE001 — a guess about an expert that cannot be addressed
+                # Speculation may name an expert the index cannot resolve.
+                # That is a wrong guess, not a failure: skip it and count it.
+                # The same lookup on the *routed* path raises, as it must.
+                self.stats.unmappable += 1
+                continue
             if not ranges:
                 continue
             try:

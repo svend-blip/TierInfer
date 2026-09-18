@@ -244,13 +244,16 @@ int main(int argc, char ** argv) {
     llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
 
-    // The prompt is decode 0 whichever way it is fed. Fed one token at a
-    // time, each token still lands in decode 0 so the reader assembles the
-    // same per-token routings; only the way llama.cpp computed them differs,
-    // which is exactly what --one-by-one exists to compare.
+    // Fed one token at a time, every prompt token is its own decode (the
+    // reader requires each layer once per decode), so a --one-by-one trace
+    // numbers its prompt tokens 0..n-1 and its generated tokens after them.
+    // Its "prompt"/"generated" split as the reader sees it is therefore not
+    // meaningful; the mode exists to compare routings position by position
+    // against a batched decode of the same prompt, nothing else.
     const auto t_prompt0 = clock::now();
     if (one_by_one) {
         for (int i = 0; i < n_tok; i++) {
+            if (i) st.decode++;
             if (llama_decode(ctx, llama_batch_get_one(&tokens[(size_t) i], 1)) != 0) {
                 std::fprintf(stderr, "tierinfer-trace: prompt decode failed at token %d\n", i);
                 return 1;
