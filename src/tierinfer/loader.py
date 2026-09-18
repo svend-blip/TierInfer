@@ -200,6 +200,119 @@ class Mapping:
         return bool(int.from_bytes(raw, "little") >> 63 & 1)
 
 
+# -- prefetch scheduling ------------------------------------------------------
+
+
+class Priority:
+    """The four classes the scope names (7.7). Lower serves first.
+
+    REQUIRED_NOW is a demand fault and never queues — the fault workers serve
+    it directly — but it is a class so telemetry can say what share of reads
+    were demand and what share speculation."""
+
+    REQUIRED_NOW = 0
+    HIGH_CONFIDENCE_NEXT = 1     # the next layer's top guesses
+    PROBABLE_NEXT = 2            # further layers, or lower-ranked guesses
+    BACKGROUND_HOT = 3           # hot experts by frequency, when the tier has room and nothing else waits
+
+    NAMES = {0: "required_now", 1: "high_confidence_next", 2: "probable_next", 3: "background_hot"}
+
+
+@dataclass(order=True)
+class _Job:
+    priority: int
+    seq: int
+    key: object = field(compare=False)
+    layer: int = field(compare=False)
+    token: int = field(compare=False)
+
+
+class PrefetchScheduler:
+    """A bounded priority queue of speculative reads with supersession.
+
+    ``serve(keys)`` is called from the worker threads with a batch of keys
+    of one layer, so the server can read adjacent slabs together
+    (coalescing). Jobs for a layer whose routing has already arrived are
+    dropped unserved and counted as superseded: reading them now would be
+    a demand read that is already happening elsewhere, or waste.
+    """
+
+    def __init__(self, serve: Callable[[list], None], *, workers: int = 4,
+                 capacity: int = 64) -> None:
+        import queue
+        self.serve = serve
+        self.capacity = capacity
+        self._q: "queue.PriorityQueue[_Job]" = queue.PriorityQueue()
+        self._seq = 0
+        self._lock = threading.Lock()
+        self._done_layers: dict[int, int] = {}      # token -> highest layer routed
+        self.enqueued = 0
+        self.served = 0
+        self.dropped_full = 0
+        self.superseded = 0
+        self.by_class = {p: 0 for p in Priority.NAMES}
+        self._threads = [threading.Thread(target=self._loop, daemon=True,
+                                          name=f"tierinfer-prefetch-{i}") for i in range(workers)]
+        for t in self._threads:
+            t.start()
+
+    def submit(self, key, *, layer: int, token: int, priority: int) -> bool:
+        with self._lock:
+            if self._q.qsize() >= self.capacity:
+                self.dropped_full += 1
+                return False
+            self._seq += 1
+            self._q.put(_Job(priority, self._seq, key, layer, token))
+            self.enqueued += 1
+            self.by_class[priority] = self.by_class.get(priority, 0) + 1
+        return True
+
+    def routed(self, layer: int, token: int) -> None:
+        """Routing for this layer has arrived: older jobs for it are stale."""
+        with self._lock:
+            self._done_layers[token] = max(self._done_layers.get(token, -1), layer)
+            for t in [t for t in self._done_layers if t < token - 1]:
+                del self._done_layers[t]
+
+    def _stale(self, job: _Job) -> bool:
+        done = self._done_layers.get(job.token, -1)
+        return job.layer <= done or job.token < max(self._done_layers, default=job.token) - 1
+
+    def _loop(self) -> None:
+        while True:
+            job = self._q.get()
+            if job.key is None:                    # the stop sentinel
+                return
+            batch = [job]
+            # gather what else is queued for the same layer, to serve together
+            try:
+                while len(batch) < 8:
+                    nxt = self._q.get_nowait()
+                    if nxt.key is None:
+                        self._q.put(nxt)
+                        break
+                    if nxt.layer == job.layer and nxt.token == job.token:
+                        batch.append(nxt)
+                    else:
+                        self._q.put(nxt)
+                        break
+            except Exception:  # noqa: BLE001 — queue.Empty
+                pass
+            with self._lock:
+                live = [j for j in batch if not self._stale(j)]
+                self.superseded += len(batch) - len(live)
+            if live:
+                try:
+                    self.serve([j.key for j in live])
+                    self.served += len(live)
+                except Exception as e:  # noqa: BLE001 — speculation may fail; demand is elsewhere
+                    print(f"tierinfer-loader: prefetch batch failed: {e}", file=sys.stderr, flush=True)
+
+    def close(self) -> None:
+        for _ in self._threads:
+            self._q.put(_Job(10 ** 6, 0, None, -1, -1))
+
+
 # -- the residency tier -----------------------------------------------------
 
 
@@ -242,6 +355,8 @@ class LoaderStats:
     copy_eagain: int = 0
     wakes: int = 0
     unmapped_pages: int = 0
+    coalesced_reads: int = 0            # one read that covered a run of consecutive experts
+    coalesced_experts: int = 0          # experts served through such reads
     repeat_faults: int = 0
 
     @property
@@ -281,8 +396,8 @@ class LoaderServer:
         self._resident_refaults: dict[object, int] = {}        # key -> faults while already resident
         self._stop = threading.Event()
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="tierinfer-fault")
-        self._prefetch_pool = ThreadPoolExecutor(max_workers=max(1, workers // 2),
-                                                 thread_name_prefix="tierinfer-prefetch")
+        self.scheduler = PrefetchScheduler(self._serve_batch, workers=max(1, workers // 2),
+                                           capacity=max(16, 8 * max(depth, 1)))
         # routing state for the current token
         self._last_layer = -1
         self._sofar: dict[int, list[int]] = {}
@@ -336,7 +451,7 @@ class LoaderServer:
     def close(self) -> None:
         self.stop()
         self._pool.shutdown(wait=False)
-        self._prefetch_pool.shutdown(wait=False)
+        self.scheduler.close()
         if self.tel:
             self.tel.close_run(**self._snapshot_values())
             self.tel.close()
@@ -743,24 +858,92 @@ class LoaderServer:
             self._prefetch_after(layer)
 
     def _prefetch_after(self, layer: int) -> None:
-        nxt = layer + 1
-        if nxt not in set(self.index.moe_layers):
+        """Queue the predictor's guesses for the layers ahead, by class.
+
+        The next layer's top guesses are HIGH_CONFIDENCE_NEXT; the layer after
+        that, and the lower-ranked half of the next layer, PROBABLE_NEXT. Hot
+        experts by frequency go in as BACKGROUND_HOT when the tier has room
+        for them without evicting anything — a guess that evicts a resident
+        expert to make room for a "hot" one is a guess LRU already made.
+        """
+        moe = self.index.moe_layers
+        token = self.stats.tokens
+        self.scheduler.routed(layer, token)
+        ahead = [l for l in moe if l > layer][:2]
+        for i, nxt in enumerate(ahead):
+            pred = self.predictor.predict(nxt, dict(self._sofar))
+            top = pred.top(self.depth)
+            for rank, e in enumerate(top):
+                key = (nxt, e)
+                with self._lock:
+                    if key in self.cache or key in self._serving:
+                        continue
+                if not any(key in m.layout.by_key for m in self.mappings):
+                    continue
+                prio = (Priority.HIGH_CONFIDENCE_NEXT if i == 0 and rank < max(1, self.depth // 2)
+                        else Priority.PROBABLE_NEXT)
+                if self.scheduler.submit(key, layer=nxt, token=token, priority=prio):
+                    self.stats.prefetch_issued += 1
+        if self.cache.free_bytes > 4 * self.index.expert_nbytes_max() and self.tracker.tokens_seen > 8:
+            for key in self.tracker.hot(4):
+                with self._lock:
+                    if key in self.cache or key in self._serving:
+                        continue
+                if self.scheduler.submit(key, layer=key[0], token=token, priority=Priority.BACKGROUND_HOT):
+                    self.stats.prefetch_issued += 1
+
+    def _serve_batch(self, keys: list) -> None:
+        """Materialise several predicted experts of one layer, reading adjacent
+        slabs together: experts e and e+1 are neighbouring slabs in each fused
+        tensor, so a run of consecutive ids is one pread per projection."""
+        keys = sorted(k for k in keys if isinstance(k, tuple) and k[0] != "floor")
+        if not keys:
             return
-        pred = self.predictor.predict(nxt, dict(self._sofar))
-        m = self.mappings[0] if self.mappings else None
+        m = next((x for x in self.mappings if keys[0] in x.layout.by_key), None)
         if m is None:
             return
-        for e in pred.top(self.depth):
-            key = (nxt, e)
-            with self._lock:
-                if key in self.cache or key in self._serving:
-                    continue
-            # the expert's slabs live in whichever mapping holds that layer
-            target = next((x for x in self.mappings if key in x.layout.by_key), None)
-            if target is None:
+        # split into runs of consecutive expert ids
+        runs: list[list] = []
+        for k in keys:
+            if runs and runs[-1][-1][0] == k[0] and runs[-1][-1][1] + 1 == k[1]:
+                runs[-1].append(k)
+            else:
+                runs.append([k])
+        for run in runs:
+            if len(run) == 1:
+                self._serve_expert(m, run[0], why="prefetch")
                 continue
-            self.stats.prefetch_issued += 1
-            self._prefetch_pool.submit(self._serve_expert, target, key, why="prefetch")
+            self._serve_run(m, run)
+
+    def _serve_run(self, m: Mapping, run: list) -> None:
+        """A run of consecutive experts: one read per projection for the whole run."""
+        with self._lock:
+            todo = [k for k in run if k not in self.cache and k not in self._serving]
+            evs = {}
+            for k in todo:
+                evs[k] = self._serving[k] = threading.Event()
+        if not todo:
+            return
+        try:
+            first, last = m.layout.by_key[todo[0]], m.layout.by_key[todo[-1]]
+            # regions of an expert are in projection order; pair them up
+            for proj in range(len(first)):
+                a = first[proj].start & ~(PAGE - 1)
+                b = min((last[proj].end + PAGE - 1) & ~(PAGE - 1), (m.length + PAGE - 1) & ~(PAGE - 1))
+                data = self._file_bytes(m, a, b)          # one read for the whole run
+                self.stats.coalesced_reads += 1
+                self._copy_pages(m, a, b, lambda x, y, d=data, a0=a: d[x - a0:y - a0])
+            with self._lock:
+                for k in todo:
+                    self.cache.put(k, None, sum(r.end - r.start for r in m.layout.by_key[k]))
+                    self._prefetched.add(k)
+                    self.stats.coalesced_experts += 1
+        finally:
+            with self._lock:
+                for k in todo:
+                    self._serving.pop(k, None)
+            for ev in evs.values():
+                ev.set()
 
     def _end_token(self) -> None:
         if self._token_keys:
@@ -808,7 +991,11 @@ class LoaderServer:
                  "faults_repaired", "bytes_copied",
                  "copy_seconds", "read_seconds", "routed", "hits", "misses", "prefetch_issued",
                  "prefetch_useful", "prefetch_late", "prefetch_wasted", "evictions", "evict_bytes",
-                 "tokens", "read_retries")} | {
+                 "tokens", "read_retries", "coalesced_reads", "coalesced_experts")} | {
+            "loader.prefetch_enqueued": self.scheduler.enqueued, "loader.prefetch_served": self.scheduler.served,
+            "loader.prefetch_superseded": self.scheduler.superseded,
+            "loader.prefetch_dropped_full": self.scheduler.dropped_full,
+            **{f"loader.prefetch_class_{Priority.NAMES[p]}": n for p, n in self.scheduler.by_class.items()},
             "loader.resident": len(self.cache), "loader.resident_bytes": self.cache.used_bytes,
             "storage.bytes_read": self.backend.stats.bytes_read,
             "storage.operations": self.backend.stats.operations,

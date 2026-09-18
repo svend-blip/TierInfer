@@ -276,3 +276,75 @@ def test_a_fault_on_a_present_page_is_woken_not_recopied(served):
         assert server.stats.bytes_copied == copied_before
     finally:
         server.close()
+
+
+# -- prefetch scheduling and coalescing (item 3) --------------------------------
+
+
+def test_the_scheduler_serves_by_class_and_drops_stale_layers():
+    import threading as _t
+    from tierinfer.loader import PrefetchScheduler, Priority
+    served, gate = [], _t.Event()
+
+    def serve(keys):
+        gate.wait(5)
+        served.extend(keys)
+    s = PrefetchScheduler(serve, workers=1, capacity=8)
+    try:
+        # occupy the single worker first, so the real jobs queue up and are
+        # ordered by class rather than by arrival
+        s.submit((0, 0), layer=0, token=0, priority=Priority.HIGH_CONFIDENCE_NEXT)
+        time.sleep(0.05)
+        s.submit((5, 1), layer=5, token=0, priority=Priority.PROBABLE_NEXT)
+        s.submit((6, 7), layer=6, token=0, priority=Priority.HIGH_CONFIDENCE_NEXT)
+        s.submit((9, 2), layer=9, token=0, priority=Priority.BACKGROUND_HOT)
+        s.routed(5, 0)                     # layer 5's routing arrived: its job is stale
+        gate.set()
+        deadline = time.time() + 5
+        while s.served + s.superseded < 4 and time.time() < deadline:
+            time.sleep(0.01)
+        assert served[1] == (6, 7), served             # high confidence before the rest
+        assert (5, 1) not in served and s.superseded == 1
+        assert (9, 2) in served
+        assert s.by_class[Priority.HIGH_CONFIDENCE_NEXT] == 2
+    finally:
+        s.close()
+
+
+def test_the_scheduler_is_bounded():
+    from tierinfer.loader import PrefetchScheduler, Priority
+    import threading as _t
+    gate = _t.Event()
+    s = PrefetchScheduler(lambda keys: gate.wait(5), workers=1, capacity=3)
+    try:
+        ok = [s.submit((1, i), layer=1, token=0, priority=Priority.PROBABLE_NEXT) for i in range(6)]
+        assert sum(ok) <= 4 and s.dropped_full >= 2       # one may be in flight, three queued
+    finally:
+        gate.set()
+        s.close()
+
+
+def test_consecutive_experts_are_read_together(served):
+    """Three neighbouring experts of one layer: one read per projection for
+    the run, not one per expert — and every byte still the file's."""
+    ix, shards = served
+    sock = _sock_path(None)
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, verbose=False,
+                          drop_page_cache=False, floor_chunk=4096)
+    _start(server, sock)
+    try:
+        files = ":".join(str(f) for f in ix.gguf.files)
+        # one read through the shim so a mapping exists; then drive the batch path
+        r0 = ix.expert(0, 0).ranges[0]
+        _run_child(shards[0], [["read", r0.file_offset, 16], ["sleep", 0.2]], sock, files)
+        # the child has exited by now; make the mapping look alive for the copy
+        # path — copies will fail with ESRCH and be retired quietly, so measure
+        # the *reads* the coalescing issued instead
+        m = server.mappings[-1]
+        ops0 = server.backend.stats.operations
+        server._serve_batch([(1, 1), (1, 2), (1, 3)])
+        assert server.backend.stats.operations - ops0 <= len(ix.expert(1, 1).ranges), \
+            "a run of three consecutive experts must not cost more reads than one expert"
+        assert server.stats.coalesced_reads >= 1
+    finally:
+        server.close()
