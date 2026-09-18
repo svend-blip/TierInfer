@@ -249,6 +249,14 @@ def test_the_declared_list_covers_the_modules_that_actually_speculate():
     speculative = set()
     for path in src.glob("*.py"):
         tree = ast.parse(path.read_text())
+        # A module that *defines* a predictor (a class deriving from Predictor)
+        # is a source of guesses, not a consumer of them: it moves no bytes, so
+        # it has no exact path to keep. The prerouter is one.
+        defines = any(isinstance(n, ast.ClassDef) and
+                      any(getattr(b, "id", getattr(b, "attr", "")) == "Predictor" for b in n.bases)
+                      for n in ast.walk(tree))
+        if defines and path.stem != "predict":
+            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module in ("predict",
                                                                     "tierinfer.predict"):
