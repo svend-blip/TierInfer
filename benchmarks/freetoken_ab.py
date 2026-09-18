@@ -34,7 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from tierinfer.bench import device_for, disk_counters, member_devices  # noqa: E402
+from tierinfer.bench import device_for, disk_counters, member_devices, residency_of  # noqa: E402
 
 FT_ROOT = Path(os.environ.get("FREETOKEN_ROOT", Path.home() / "freetoken-qwen38"))
 FT = FT_ROOT / ".venv" / "bin" / "ft"
@@ -46,24 +46,14 @@ PROMPT = ("Design an expert cache for a sparse mixture-of-experts model whose we
 
 
 def _drop(paths: list[Path]) -> float:
-    """posix_fadvise DONTNEED on every shard; returns the resident fraction after (fincore)."""
+    """posix_fadvise DONTNEED on every shard; returns the resident fraction after (mincore)."""
     for p in paths:
         fd = os.open(p, os.O_RDONLY)
         try:
             os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
         finally:
             os.close(fd)
-    try:
-        out = subprocess.run(["fincore", "-b", "--noheadings", "--output", "RES,SIZE", *map(str, paths)],
-                             capture_output=True, text=True, check=True).stdout
-        res = size = 0
-        for line in out.splitlines():
-            a, b = line.split()[:2]
-            res += int(a)
-            size += int(b)
-        return res / size if size else 0.0
-    except (OSError, subprocess.CalledProcessError, ValueError):
-        return -1.0
+    return residency_of(paths).fraction
 
 
 def _snap(device: str, members: list[str]):
@@ -88,10 +78,14 @@ def _wait_health(port: int, proc: subprocess.Popen, timeout: float) -> float:
         if proc.poll() is not None:
             raise RuntimeError(f"ft serve exited with {proc.returncode} before it was healthy")
         try:
-            _get(f"http://127.0.0.1:{port}/v1/models", timeout=2)
-            return time.time() - t0
+            h = _get(f"http://127.0.0.1:{port}/health", timeout=2)
+            if h.get("status") == "ok":                 # loading -> ok -> error (FreeToken's own lifecycle)
+                return time.time() - t0
+            if h.get("status") == "error":
+                raise RuntimeError(f"ft serve reports error: {h.get('message')}")
         except (urllib.error.URLError, OSError, ValueError):
-            time.sleep(1.0)
+            pass
+        time.sleep(1.0)
     raise RuntimeError(f"ft serve not healthy after {timeout:.0f} s")
 
 
@@ -130,7 +124,7 @@ def _kill(proc: subprocess.Popen | None, name: str, grace: float = 20.0) -> None
     print(f"   {name} stopped ({proc.returncode})")
 
 
-def run_arm(label: str, a, out: Path, device: str, members: list[str]) -> dict:
+def run_arm(label: str, arm: str, a, out: Path, device: str, members: list[str]) -> dict:
     shards = sorted(a.model.glob("*.ftw"))
     frac = _drop(shards)
     print(f"== {label}\n   cold: {frac:.2%} resident after drop", flush=True)
@@ -141,7 +135,7 @@ def run_arm(label: str, a, out: Path, device: str, members: list[str]) -> dict:
     server = None
     sock = None
     tel = out / f"{label}.telemetry.jsonl"
-    if label.startswith("tiered"):
+    if arm == "tiered":
         sock = f"/tmp/tierinfer-ft-{os.getpid()}.sock"
         try:
             os.unlink(sock)
@@ -191,7 +185,8 @@ def run_arm(label: str, a, out: Path, device: str, members: list[str]) -> dict:
            "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
            "text": text, "stats_before": stats0, "stats_after": stats1,
            "io_load": _delta(io0, io_load, members), "io_infer": _delta(io_load, io1, members),
-           "tier_gb": a.tier_gb if label.startswith("tiered") else None, "cpu_layers": a.cpu_layers}
+           "arm": arm, "rep": label.rsplit("-", 1)[-1],
+           "tier_gb": a.tier_gb if arm == "tiered" else None, "cpu_layers": a.cpu_layers}
     if usage.get("completion_tokens"):
         res["gen_tps_wall"] = usage["completion_tokens"] / wall     # upper bound on decode time: includes prefill
     (out / f"{label}.json").write_text(json.dumps(res, indent=1))
@@ -228,7 +223,7 @@ def main() -> int:
     results = []
     for rep in range(a.first_rep - 1, a.first_rep - 1 + a.repeat):
         for arm in a.arms.split(","):
-            results.append(run_arm(f"{a.label}-{arm}-{rep + 1}", a, a.out, device, members))
+            results.append(run_arm(f"{a.label}-{arm}-{rep + 1}", arm, a, a.out, device, members))
     texts = {r["text"] for r in results}
     print(f"\nGreedy output identical across runs and arms: {len(texts) == 1}")
     return 0
