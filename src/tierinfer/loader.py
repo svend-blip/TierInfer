@@ -271,8 +271,11 @@ class LoaderServer:
         self.debug = bool(os.environ.get("TIERINFER_DEBUG"))
         try:
             faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
+            signal.signal(signal.SIGUSR2, lambda *_: self._say(f"stats {self.stats} resident {len(self.cache)} "
+                                                                  f"({self.cache.used_bytes / GB:.1f} GB) "
+                                                                  f"serving {len(self._serving)}"))
         except (AttributeError, ValueError, RuntimeError):
-            pass
+            pass                       # not the main thread, or no such signal here
 
     # -- lifecycle ----------------------------------------------------------
 
