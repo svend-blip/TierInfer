@@ -33,14 +33,26 @@ ROOT = Path(__file__).resolve().parent.parent
 SHIM = ROOT / "build" / "libtierinfer_mmap.so"
 
 CHILD = r'''
-import mmap, os, sys, json, time
+import mmap, os, sys, json, time, ctypes, ctypes.util
 path, plan = sys.argv[1], json.loads(sys.argv[2])
 fd = os.open(path, os.O_RDONLY)
 size = os.fstat(fd).st_size
 mm = mmap.mmap(fd, size, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ)
 out = []
 for step in plan:
-    if step[0] == "read":
+    if step[0] == "unmap_tail":
+        # what llama.cpp does with fragments no used tensor lives in
+        libc = ctypes.CDLL(ctypes.util.find_library("c"))
+        # the shim notes where the anonymous region landed, for exactly this
+        base = None
+        for line in open(os.environ["TIERINFER_BASE_FILE"]):
+            p_, b_, l_ = line.split()
+            if p_ == os.path.realpath(path):
+                base = int(b_, 16)
+        assert base is not None, "the shim did not note the mapping"
+        start = (size - step[1]) & ~4095
+        assert libc.munmap(ctypes.c_void_p(base + start), ctypes.c_size_t(((size + 4095) & ~4095) - start)) == 0
+    elif step[0] == "read":
         _, off, n = step
         t0 = time.perf_counter(); data = mm[off:off + n]; dt = time.perf_counter() - t0
         out.append({"off": off, "n": n, "digest": __import__("hashlib").blake2b(data, digest_size=8).hexdigest(), "ms": dt * 1000})
@@ -105,7 +117,9 @@ def _start(server, sock):
 
 
 def _run_child(shard, plan, sock, files, timeout=60):
-    env = dict(os.environ, LD_PRELOAD=str(SHIM), TIERINFER_SOCK=sock, TIERINFER_FILES=files)
+    note = str(Path(sock).parent / "bases")
+    env = dict(os.environ, LD_PRELOAD=str(SHIM), TIERINFER_SOCK=sock, TIERINFER_FILES=files,
+               TIERINFER_BASE_FILE=note)
     import json
     r = subprocess.run([sys.executable, "-c", CHILD, str(shard), json.dumps(plan)],
                        capture_output=True, text=True, env=env, timeout=timeout)
@@ -182,5 +196,28 @@ def test_an_eviction_takes_the_pages_away_and_the_next_touch_faults_again(served
         assert len(server.cache) <= 2
         # expert 0 was served twice: once cold, once after its eviction
         assert server.stats.faults_expert >= 5, server.stats
+    finally:
+        server.close()
+
+
+def test_a_chunk_that_straddles_an_unmapped_tail_is_still_served(served):
+    """llama.cpp munmaps the part of a file no used tensor lives in; a floor
+    chunk that reaches into it must still deliver its mapped pages, or the
+    client faults on the same page forever (the first live run did)."""
+    ix, shards = served
+    sock = _sock_path(None)
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, verbose=False,
+                          drop_page_cache=False, floor_chunk=16384)
+    _start(server, sock)
+    try:
+        files = ":".join(str(f) for f in ix.gguf.files)
+        size = shards[0].stat().st_size
+        # unmap the last two pages; read the whole page just before the cut
+        cut = (size - 8192) & ~4095
+        plan = [["unmap_tail", 8192], ["read", cut - 4096, 4096]]
+        out, err = _run_child(shards[0], plan, sock, files)
+        assert out[0]["digest"] == _digest(shards[0], cut - 4096, 4096), err
+        assert server.stats.faults >= 1
+        assert server.stats.repeat_faults == 0
     finally:
         server.close()

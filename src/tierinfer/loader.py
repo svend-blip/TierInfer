@@ -218,6 +218,8 @@ class LoaderStats:
     read_retries: int = 0
     copy_eagain: int = 0
     wakes: int = 0
+    unmapped_pages: int = 0
+    repeat_faults: int = 0
 
     @property
     def hit_rate(self) -> float:
@@ -252,6 +254,7 @@ class LoaderServer:
         self._serving: dict[object, threading.Event] = {}      # key -> done event
         self._prefetched: set = set()                          # keys materialised by prefetch, not yet routed
         self._floor_done: set = set()                          # (path, chunk index)
+        self._repeats: dict[int, int] = {}                     # page offset -> consecutive faults seen
         self._stop = threading.Event()
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="tierinfer-fault")
         self._prefetch_pool = ThreadPoolExecutor(max_workers=max(1, workers // 2),
@@ -409,6 +412,15 @@ class LoaderServer:
         offset = (addr - m.base) & ~(PAGE - 1)
         region = m.layout.owner_of_page(offset)
         self.stats.faults += 1
+        n = self._repeats.get(offset, 0) + 1
+        self._repeats[offset] = n
+        if n > 64:
+            self.stats.repeat_faults += 1
+            raise LoaderError(f"page at file offset {offset} of {m.path.name} has faulted {n} times "
+                              f"without becoming present (region {region.key if region else None}); "
+                              "refusing to spin — the client is left waiting rather than lied to")
+        if len(self._repeats) > 4096:
+            self._repeats.clear()
         if self.debug:
             self._say(f"fault {addr:#x} flags {flags:#x} off {offset} -> {region.key if region else None}")
         if region is None:
@@ -543,26 +555,39 @@ class LoaderServer:
         Pages already present (a neighbour's edge, a race with another
         worker) return EEXIST; they are skipped a page at a time, because a
         present page is by construction already the right bytes.
+
+        A range that reaches into memory the client has unmapped returns
+        ENOENT *before anything is copied* — the kernel checks the whole
+        destination first. llama.cpp unmaps the fragments of a file no used
+        tensor lives in (the unused `nextn` tensors at the end of GLM-4.5-Air
+        are one), so a floor chunk can straddle the boundary. The first live
+        run copied nothing for such a chunk, marked it done, and the client
+        faulted on the same page five million times. Now the copy bisects to
+        the mapped prefix and copies that.
         """
         data = source(a, b)
         buf = (ctypes.c_char * len(data)).from_buffer_copy(data)
         src0 = ctypes.addressof(buf)
         cur = a
+        end = b            # what this attempt asks for; shrinks on ENOENT, resets on progress
         t0 = time.perf_counter()
         skipped = 0
         while cur < b:
-            req = bytearray(struct.pack("<QQQQq", m.base + cur, src0 + (cur - a), b - cur, 0, 0))
+            req = bytearray(struct.pack("<QQQQq", m.base + cur, src0 + (cur - a), end - cur, 0, 0))
             try:
                 fcntl.ioctl(m.uffd, UFFDIO_COPY, req)
                 done = struct.unpack_from("<q", req, 32)[0]
-                cur += done if done > 0 else (b - cur)
+                cur += done if done > 0 else (end - cur)
+                end = b
             except OSError as e:
                 done = struct.unpack_from("<q", req, 32)[0]
                 if done > 0:
                     cur += done
+                    end = b
                 elif e.errno == errno.EEXIST:
                     cur += PAGE
                     skipped += 1
+                    end = b
                 elif e.errno == errno.EAGAIN:
                     # the client's address space is changing under us (an
                     # mmap/munmap in flight); back off briefly and retry
@@ -571,9 +596,13 @@ class LoaderServer:
                         self._say(f"UFFDIO_COPY keeps returning EAGAIN ({self.stats.copy_eagain} so far)")
                     time.sleep(0.001)
                 elif e.errno == errno.ENOENT:
-                    # the client unmapped this range (llama.cpp frees fragments
-                    # it moved to the GPU); nothing left to serve here
-                    return
+                    # part of [cur, end) is unmapped: halve the ask and try again;
+                    # a single page that is gone ends the copy — everything past
+                    # it is the unmapped fragment
+                    if end - cur <= PAGE:
+                        self.stats.unmapped_pages += 1
+                        break
+                    end = cur + max(PAGE, ((end - cur) // 2) // PAGE * PAGE)
                 else:
                     raise LoaderError(f"UFFDIO_COPY at {m.base + cur:#x}: {e}") from e
         self.stats.copy_seconds += time.perf_counter() - t0

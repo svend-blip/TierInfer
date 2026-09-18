@@ -230,6 +230,13 @@ void * mmap(void * addr, size_t len, int prot, int flags, int fd, off_t off) {
         return real_mmap(addr, len, prot, flags, fd, off);
     }
     if (!announced) { say("serving %s through userfaultfd (%zu bytes at %p)", path, len, base); announced = true; }
+    // For tests that need to know where the region landed (a client cannot
+    // otherwise tell an anonymous region from any other in its own maps).
+    const char * note = getenv("TIERINFER_BASE_FILE");
+    if (note) {
+        FILE * f = fopen(note, "a");
+        if (f) { fprintf(f, "%s %llx %llu\n", path, (unsigned long long) (uintptr_t) base, (unsigned long long) len); fclose(f); }
+    }
     return base;
 }
 
