@@ -299,7 +299,8 @@ int munmap(void * addr, size_t len) {
     if (!real_munmap) real_munmap = (munmap_fn) dlsym(RTLD_NEXT, "munmap");
     int rc = real_munmap(addr, len);
     if (rc != 0 || !enabled) return rc;
-    const uintptr_t a0 = (uintptr_t) addr, b0 = a0 + len;
+    const uintptr_t page = (uintptr_t) sysconf(_SC_PAGESIZE);
+    const uintptr_t a0 = (uintptr_t) addr & ~(page - 1), b0 = ((uintptr_t) addr + len + page - 1) & ~(page - 1);
     // record the hole in every served region it touches, and tell the server
     char msg[96];
     pthread_mutex_lock(&map_lock);
