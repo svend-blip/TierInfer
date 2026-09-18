@@ -1,0 +1,4 @@
+cold: residency after drop 0.00%
+replay verify-d8: 3 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 100.0 GB = 3509 experts (35.4% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    21057 ms  wait  15948  stalls 496 late   0 useful   0  cache   0/  0  dev 13.17 GB  37272 reads @  371 KB
+  token    1    17780 ms  wait   7791  stalls 247 late   0 useful   0  cache 249/249  dev 13.17 GB  37346 reads @  370 KB

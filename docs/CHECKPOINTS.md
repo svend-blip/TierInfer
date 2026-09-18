@@ -208,3 +208,19 @@ inferred from bytes read.
   measured in the replay arms (CP-6b/7/8).
 - **Unresolved:** none.
 - **Next:** CP-5 GPU sweep is running (`chain4`); replay arms queued.
+
+## CP-5 — GPU offload baseline selected
+
+- **Revision:** the commit carrying this entry.
+- **Command:** `serve_run.sh <label> <out> 32 -- -m <shard 1> -ngl 99 -ncmoe N -c 4096 -t 32 --no-warmup -fa on`
+  for N = 62, 60, 58, 57 (cold, then warm), stop at the first failure.
+- **Result:** table in `VALIDATION-480B.md` §2, raw in `raw/sweep/`. VRAM
+  after load 12.9 / 22.3 / 31.6 GB for 0 / 2 / 4 expert layers on the card;
+  N=57 fails in `cudaMalloc` for a 29.8 GiB buffer (`raw/sweep/native-ngl99-ncmoe57-cold.server.log`).
+  Generation 0.38–0.51 t/s across the working configurations against 0.20–0.24
+  at `-ngl 0`; md0 reads per token 51–85 k.
+- **Selected:** `-ngl 99 -ncmoe 60` (22.3 GB, 9 GB headroom). N=58 works with
+  under 1 GB free and is not stable enough to build a comparison on.
+- **Unresolved:** none.
+- **Next:** CP-6b/7/8 replay arms are running (`chain5`), starting with the
+  byte-verification arm.

@@ -75,7 +75,30 @@ so ~90 % of what a token touches was still resident from recent tokens.
 
 ## 2. GPU offload point (`-ngl 99 -ncmoe N`)
 
-_(CP-5, queued behind the routing capture)_
+Same prompt, tokens and context as §1; `-ngl 99` puts every non-expert
+tensor on the card and `-ncmoe N` keeps the fused expert tensors of the
+first N layers on the CPU, so 62−N layers' experts (4.67 GB each) go to
+VRAM. Flash attention on. One cold and one warm run per step; the sweep
+stops at the first step the runtime cannot allocate.
+
+| `-ncmoe` | expert layers on GPU | VRAM after load | load s | prompt t/s | gen t/s cold / warm | gen: md0 GB/token | md0 reads/token | md0 util | CPU |
+|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| 62 | 0 | 12.9 GB | 193 / 149 | 0.760 / 0.781 | 0.419 / 0.461 | 1.77 / 1.39 | 67 535 / 53 496 | 0.64 / 0.57 | 0.74 |
+| 60 | 2 | 22.3 GB | 191 / 147 | 0.768 / 0.899 | 0.463 / 0.380 | 1.51 / 1.67 | 57 763 / 84 508 | 0.59 / 0.62 | 0.72 |
+| 58 | 4 | 31.6 GB | 193 / 165 | 0.801 / 0.879 | 0.509 / 0.447 | 1.33 / 1.56 | 50 812 / 58 624 | 0.58 / 0.57 | 0.76 |
+| 57 | 5 | — | — | — | **OOM**: `cudaMalloc failed: out of memory` allocating a 29.8 GiB CUDA0 buffer | | | | |
+
+**Selected: `-ngl 99 -ncmoe 60`** — 22.3 GB of 32.6 in use, 9 GB of headroom
+for a longer context or a second process; `-ncmoe 58` runs but leaves
+0.97 GB, which the next KV allocation would take. The reason it is a
+*baseline* and not a *result*: moving attention to the GPU lifts generation
+from 0.24 to ~0.42–0.46 t/s, and each further expert layer on the card buys
+what its 4.67 GB of experts no longer have to be faulted in — but the
+run-to-run spread (0.38–0.51) is as large as the step-to-step gain, because
+storage still binds. md0 reads per token fall with the layers moved (67 k →
+51 k cold) and utilisation rises to ~0.6, which is the same story as §1 with
+less CPU in the way.
+
 
 ## 3. Routing captured from the running 480B
 

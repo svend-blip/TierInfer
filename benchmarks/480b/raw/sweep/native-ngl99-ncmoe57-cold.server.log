@@ -1,0 +1,18 @@
+0.00.037.782 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.139.792 W srv  llama_server: -----------------
+0.00.139.795 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.139.796 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.139.796 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.139.796 W srv  llama_server: -----------------
+0.00.141.170 I srv    load_model: loading model '/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf'
+0.00.386.006 W common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort
+0.00.457.853 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.00.494.153 W llama_model_loader: tensor overrides to CPU are used with mmap enabled - consider using --load-mode none for better performance
+2.48.735.296 E ggml_backend_cuda_buffer_type_alloc_buffer: allocating 29796.43 MiB on device 0: cudaMalloc failed: out of memory
+2.48.735.300 E alloc_tensor_range: failed to allocate CUDA0 buffer of size 31243821056
+2.48.962.745 E llama_model_load: error loading model: unable to allocate CUDA0 buffer
+2.48.962.753 E llama_model_load_from_file_impl: failed to load model
+2.48.962.989 E cmn  common_init_: failed to load model '/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf'
+2.48.962.997 E srv    load_model: failed to load model, '/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf'
+2.48.963.083 I srv    operator(): operator(): cleaning up before exit...
+2.48.964.529 E srv  llama_server: exiting due to model loading error

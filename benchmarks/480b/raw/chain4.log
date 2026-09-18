@@ -1,0 +1,22 @@
+cold residency 0.0
+prompt 111 tok in 146.0s (0.760 t/s); gen 32 tok in 74.0s (0.419 t/s)
+native-ngl99-ncmoe62-cold done
+ncmoe 62 rc=0
+prompt 111 tok in 142.1s (0.781 t/s); gen 32 tok in 67.3s (0.461 t/s)
+native-ngl99-ncmoe62-warm done
+cold residency 0.0
+prompt 111 tok in 144.6s (0.768 t/s); gen 32 tok in 66.9s (0.463 t/s)
+native-ngl99-ncmoe60-cold done
+ncmoe 60 rc=0
+prompt 111 tok in 123.5s (0.899 t/s); gen 32 tok in 81.7s (0.380 t/s)
+native-ngl99-ncmoe60-warm done
+cold residency 0.0
+prompt 111 tok in 138.6s (0.801 t/s); gen 32 tok in 60.9s (0.509 t/s)
+native-ngl99-ncmoe58-cold done
+ncmoe 58 rc=0
+prompt 111 tok in 126.3s (0.879 t/s); gen 32 tok in 69.4s (0.447 t/s)
+native-ngl99-ncmoe58-warm done
+cold residency 0.0
+ncmoe 57 rc=server died
+stopping sweep at ncmoe 57
+chain4-done
