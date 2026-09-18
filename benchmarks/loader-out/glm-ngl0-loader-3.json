@@ -1,0 +1,50 @@
+{
+ "label": "glm-ngl0-loader-3",
+ "cmd": [
+  "/home/svend/llama.cpp-qwen38/build/bin/llama-server",
+  "--port",
+  "8931",
+  "--host",
+  "127.0.0.1",
+  "-m",
+  "/home/svend/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf",
+  "-c",
+  "4096",
+  "-t",
+  "32",
+  "--no-warmup",
+  "-ngl",
+  "0",
+  "-fa",
+  "off"
+ ],
+ "load_s": 23.0171799659729,
+ "prompt_n": 111,
+ "prompt_s": 3.507848,
+ "prompt_tps": 31.6433323222671,
+ "gen_n": 32,
+ "gen_s": 12.365182,
+ "gen_tps": 2.507039524367696,
+ "ttft_s": 3.507848,
+ "wall_s": 15.87596845626831,
+ "content": "<think>We are designing an expert cache for a sparse mixture-of-experts (MoE) model where expert weights are too large to fit in system memory. The",
+ "io_load": {
+  "reads": 462585,
+  "bytes": 60630802432
+ },
+ "io_infer": {
+  "reads": 5,
+  "bytes": 90112,
+  "mean_read_bytes": 18022.4,
+  "await_ms": 0.8,
+  "members": {}
+ },
+ "server": {
+  "VmHWM": 60999094272,
+  "VmRSS": 60148547584,
+  "majflt": 0
+ },
+ "loader": {},
+ "arm": "loader",
+ "rep": 3
+}

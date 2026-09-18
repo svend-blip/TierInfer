@@ -142,10 +142,17 @@ __attribute__((constructor)) static void setup(void) {
         char * rp = realpath(tok, NULL);
         files[n_files++] = rp ? rp : strdup(tok);
     }
-    ctl_sock = connect_sock(sock);
-    evict_sock = connect_sock(sock);
+    // TIERINFER_SOCK set means a server is intended; give it time to come up
+    // before concluding it is absent (two of three GLM repetitions ran native
+    // because llama-server started in the gap between a stale socket file
+    // and the new server's bind).
+    for (int attempt = 0; attempt < 100 && ctl_sock < 0; attempt++) {
+        ctl_sock = connect_sock(sock);
+        if (ctl_sock < 0) usleep(100 * 1000);
+    }
+    if (ctl_sock >= 0) evict_sock = connect_sock(sock);
     if (ctl_sock < 0 || evict_sock < 0) {
-        say("cannot reach the server at %s — standing aside (native mmap)", sock);
+        say("cannot reach the server at %s after 10 s — standing aside (native mmap)", sock);
         if (ctl_sock >= 0) close(ctl_sock);
         if (evict_sock >= 0) close(evict_sock);
         ctl_sock = evict_sock = -1;

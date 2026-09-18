@@ -353,6 +353,9 @@ class LoaderServer:
             conn.close()
             return
         kind, pid = parts[1], int(parts[2])
+        if kind == "probe":
+            conn.close()                        # a liveness check from a harness
+            return
         if kind == "evict":
             with self._lock:
                 self._evict_conns[pid] = conn

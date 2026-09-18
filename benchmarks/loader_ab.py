@@ -187,10 +187,29 @@ def main() -> int:
                 env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
                 server = subprocess.Popen(cmd, env=env, stdout=open(a.out / f"{label}.server.log", "w"),
                                           stderr=subprocess.STDOUT)
-                for _ in range(100):
-                    if os.path.exists(sock):
+                # Wait until the server *accepts*, not until the path exists: a
+                # stale socket file from the previous repetition exists before
+                # the new server has bound, and llama-server started in that gap
+                # found nobody home and ran native — two of three GLM "loader"
+                # repetitions did exactly that on 2026-09-18.
+                import socket as _socket
+                up = False
+                for _ in range(600):
+                    try:
+                        with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as probe:
+                            probe.settimeout(0.5)
+                            probe.connect(sock)
+                            probe.sendall(b"HELLO probe 0\n")
+                        up = True
                         break
-                    time.sleep(0.1)
+                    except OSError:
+                        time.sleep(0.1)
+                    if server.poll() is not None:
+                        break
+                if not up:
+                    print(f"tierinfer serve did not accept on {sock}; see {a.out / (label + '.server.log')}",
+                          file=sys.stderr)
+                    return 2
                 loader = {"sock": sock, "files": files}
             try:
                 res = run_arm(label, a.model, prompt, a.n_predict, a.extra, port=a.port, device=device,
@@ -206,6 +225,10 @@ def main() -> int:
                     except subprocess.TimeoutExpired:
                         server.kill()
             if arm == "loader":
+                llama_log = (a.out / f"{label}.llama.log").read_text(errors="replace")
+                if "standing aside" in llama_log or "through userfaultfd" not in llama_log:
+                    res["stood_aside"] = True
+                    print("   WARNING: the shim stood aside — this run is NATIVE, not a loader run", file=sys.stderr)
                 # the last snapshot of the server's telemetry, for the table
                 try:
                     from tierinfer.telemetry import read
@@ -239,6 +262,8 @@ def main() -> int:
     for r in results:
         io = r["io_infer"]
         ident = "—" if not natives else ("yes" if r["content"] == natives[0]["content"] else "**NO**")
+        if r.get("stood_aside"):
+            ident += " (SHIM STOOD ASIDE — native run)"
         lines.append(f"| {r['arm']} | {r['rep']} | {r['load_s']:.0f} | {r['prompt_tps']:.3f} | {r['gen_tps']:.3f} | "
                      f"{io['bytes'] / GB:.2f} | {io['reads']} | {io['mean_read_bytes'] / 1024:.0f} | {io['await_ms']:.2f} | "
                      f"{r['server'].get('VmHWM', 0) / GB:.0f} | {ident} |")
