@@ -1,7 +1,7 @@
 From c3b229898aa175a442598f7dbecf0b85cc63e0b0 Mon Sep 17 00:00:00 2001
 From: svend-blip <svend@torplarsen.dk>
 Date: Fri, 18 Sep 2026 10:31:57 +0200
-Subject: [PATCH] feat(moe): TierInfer-served expert banks for CPU-executor
+Subject: [PATCH 1/2] feat(moe): TierInfer-served expert banks for CPU-executor
  layers
 
 With TIERINFER_SOCK set (a running `tierinfer serve <ftw-dir> --ram-gb N`)
@@ -311,6 +311,38 @@ index 0000000..eee05b1
 +
 +def route(sock: str, layer: int, ids, *, after: bool = True) -> None:
 +    _client().session(sock).route(layer, ids, after=after)
+-- 
+2.43.0
+
+
+From 4e7b8856ea5fe5c9926b9deecc4098b42b5b94de Mon Sep 17 00:00:00 2001
+From: svend-blip <svend@torplarsen.dk>
+Date: Fri, 18 Sep 2026 10:49:20 +0200
+Subject: [PATCH 2/2] fix(moe): drain the stream before reporting the previous
+ step's routing to TierInfer
+
+The per-layer id logs are written by the graph on the compute stream; read
+before it drains they describe the step before the one whose faults are
+being scored.
+---
+ python/freetoken/moe/cpu_executor.py | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/python/freetoken/moe/cpu_executor.py b/python/freetoken/moe/cpu_executor.py
+index ca81e32..c21df82 100644
+--- a/python/freetoken/moe/cpu_executor.py
++++ b/python/freetoken/moe/cpu_executor.py
+@@ -607,6 +607,10 @@ class CpuMoeExecutor:
+             return
+         from freetoken.moe.tierinfer_tier import route
+ 
++        # the log copies ride the compute stream inside the previous step's graph; the
++        # step's CPU work (and its faults) finished when that stream drained, and so did
++        # the ids — read them only then, or the report describes the step before
++        torch.cuda.current_stream().synchronize()
+         for layer_id, bs in self._route_pending:
+             route(self._tier_sock, layer_id, self._route_log[(layer_id, bs)], after=True)
+ 
 -- 
 2.43.0
 
