@@ -77,6 +77,22 @@ is shifted by one. Medians over a run are unaffected.
   device counters. Results: `benchmarks/freetoken-out/` and the checkpoint
   that cites them.
 
+## Measured (CP-13, Flash-Next NVFP4, 12 of 48 MoE layers on the CPU executor)
+
+| arm | load | 95 + 63 tokens | FreeToken decode | inference I/O |
+|---|--:|--:|--:|--:|
+| native, every bank resident | 55 s | 4.3 s | 35 t/s | 0.01 GiB |
+| tiered, 16 GB budget (holds the 12 layers) | 44 s | 25 s | **35 t/s** | 15.5 GiB |
+| tiered, 8 GB budget (half of them) | 44 s | 38–40 s | 5.4–6.3 t/s | 18.7 GiB |
+
+When the budget holds the layers, decode runs at native speed and the only
+cost is the prefill that fills the tier (17.1 GB in ~23 s), the bytes
+native reads at load instead. Below the working set the tier hits 85.8 %
+of routed experts per step and decode pays ~40 MB and ~210–250 ms per
+step. Prefetch for the next step adds nothing measurable. Full table:
+`benchmarks/freetoken-out/flashnext.md`; the checkpoint: `docs/CHECKPOINTS.md`
+CP-13.
+
 ## Tests
 
 - `tests/test_ftw.py` — the FTW index on a synthetic checkpoint.

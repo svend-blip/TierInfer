@@ -75,3 +75,10 @@ tierinfer-loader: pid 576031: serving down_global#L00032 (0.00 GB at 0x793588400
 tierinfer-loader: pid 576031: serving down_global#L00036 (0.00 GB at 0x793580680000), 512 regions
 tierinfer-loader: pid 576031: serving down_global#L00040 (0.00 GB at 0x7925b4700000), 512 regions
 tierinfer-loader: pid 576031: serving down_global#L00044 (0.00 GB at 0x7925b3d00000), 512 regions
+tierinfer-loader: token 1: hit 0.0% (0/120) faults 9269 copied 16.1 GB evicted 3139 prefetch 0/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 2: hit 25.0% (60/240) faults 11279 copied 16.4 GB evicted 3244 prefetch 48/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 3: hit 34.2% (123/360) faults 12374 copied 16.5 GB evicted 3272 prefetch 48/5/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 20: hit 72.6% (1742/2400) faults 29025 copied 17.6 GB evicted 3699 prefetch 48/11/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 40: hit 78.8% (3784/4800) faults 43311 copied 18.5 GB evicted 4036 prefetch 48/12/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 60: hit 82.7% (5952/7200) faults 53316 copied 19.1 GB evicted 4262 prefetch 48/14/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: pid 576031: control channel closed
