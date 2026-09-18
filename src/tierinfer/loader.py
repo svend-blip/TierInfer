@@ -761,7 +761,7 @@ class LoaderServer:
             self._say(f"pid {pid}: UNMAP {addr:#x}+{n} is not inside a mapping I serve")
             return
         a = addr - m.base
-        b = min(a + n, m.length)
+        b = min(a + n, (m.length + PAGE - 1) & ~(PAGE - 1))   # the region is page-granular; the file is not
         if a == 0 and b >= m.length:
             # the whole region: the client is tearing down (Python's mmap
             # object, llama_free_model). Nothing to forget one by one; the
