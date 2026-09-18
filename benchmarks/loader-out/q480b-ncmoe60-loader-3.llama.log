@@ -1,0 +1,53 @@
+tierinfer-mmap: connected to /tmp/tierinfer-494715.sock for 6 file(s)
+0.00.117.938 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.200.626 W srv  llama_server: -----------------
+0.00.200.629 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.200.629 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.200.629 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.200.629 W srv  llama_server: -----------------
+0.00.201.899 I srv    load_model: loading model '/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf'
+tierinfer-mmap: routing callback installed
+0.00.518.306 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.00.554.849 W llama_model_loader: tensor overrides to CPU are used with mmap enabled - consider using --load-mode none for better performance
+tierinfer-mmap: serving /data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf through userfaultfd (49973553312 bytes at 0x74babe56b000)
+tierinfer-mmap: unmapped 771723264 bytes at 74babe56b000 inside a served region; told the server
+tierinfer-mmap: unmapped 46026752 bytes at 74c65e404000 inside a served region; told the server
+tierinfer-mmap: unmapped 46014464 bytes at 74af27e12000 inside a served region; told the server
+tierinfer-mmap: unmapped 93655040 bytes at 74bab8c19000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 74a3bf919000 inside a served region; told the server
+tierinfer-mmap: unmapped 3952640 bytes at 74af1fc3a000 inside a served region; told the server
+tierinfer-mmap: unmapped 8192 bytes at 749859ca6000 inside a served region; told the server
+tierinfer-mmap: unmapped 8192 bytes at 748cc62b9000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 7482d042f000 inside a served region; told the server
+tierinfer-mmap: unmapped 9986306048 bytes at 748a72f09000 inside a served region; told the server
+tierinfer-mmap: routing callback installed
+tierinfer-mmap: unmapped 30699520 bytes at 748c862b9000 inside a served region; told the server
+tierinfer-mmap: unmapped 2850816 bytes at 748cc6000000 inside a served region; told the server
+tierinfer-mmap: unmapped 33550336 bytes at 748bfe001000 inside a served region; told the server
+tierinfer-mmap: unmapped 20107264 bytes at 74badccd3000 inside a served region; told the server
+tierinfer-mmap: unmapped 13443072 bytes at 74bae0000000 inside a served region; told the server
+0.22.013.522 I cmn          init: llama threadpool init, n_threads = 32
+tierinfer-mmap: unmapped 33550336 bytes at 748be0001000 inside a served region; told the server
+0.36.753.535 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.36.756.421 I srv  llama_server: model loaded
+0.36.756.426 I srv  llama_server: listening on http://127.0.0.1:8931
+0.37.004.310 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+0.37.004.375 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+3.53.064.515 I slot print_timing: id  3 | task 0 | prompt eval time =  148156.48 ms /   111 tokens ( 1334.74 ms per token,     0.75 tokens per second)
+3.53.064.520 I slot print_timing: id  3 | task 0 |        eval time =   47903.61 ms /    32 tokens ( 1545.28 ms per token,     0.65 tokens per second)
+3.53.064.520 I slot print_timing: id  3 | task 0 |       total time =  196060.09 ms /   143 tokens
+3.53.064.527 I slot print_timing: id  3 | task 0 |    graphs reused =         30
+3.53.064.578 I slot      release: id  3 | task 0 | stop processing: n_tokens = 142, truncated = 0
+3.53.066.911 I srv    operator(): operator(): cleaning up before exit...
+tierinfer-mmap: unmapped 2281701376 bytes at 748c00000000 inside a served region; told the server
+tierinfer-mmap: unmapped 1040187392 bytes at 748c88000000 inside a served region; told the server
+tierinfer-mmap: unmapped 49155801088 bytes at 74baec564000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 74c660fe9000 inside a served region; told the server
+tierinfer-mmap: unmapped 49629253632 bytes at 74af2a9f4000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 74babe56a000 inside a served region; told the server
+tierinfer-mmap: unmapped 48858529792 bytes at 74a3bf91a000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 74af1ffff000 inside a served region; told the server
+tierinfer-mmap: unmapped 48952184832 bytes at 749859ca8000 inside a served region; told the server
+tierinfer-mmap: unmapped 49721290752 bytes at 748cc62bb000 inside a served region; told the server
+tierinfer-mmap: unmapped 32794054656 bytes at 7482d0430000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 748cc62b8000 inside a served region; told the server

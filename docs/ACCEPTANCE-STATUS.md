@@ -134,7 +134,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-LLAMA-008 | BLOCKED | VRAM under llama.cpp is llama.cpp's (`-ncmoe`); a TierInfer VRAM tier needs a llama.cpp patch — documented, not attempted |
 | TI-LLAMA-009 | IMPLEMENTED_UNVERIFIED | shim `cb_eval` → ROUTE |
 | TI-LLAMA-010 | VERIFIED | 32 greedy tokens identical to native (CP-11) |
-| TI-LLAMA-011 | VERIFIED (run 1) | 480B: loader 0.622 t/s vs native 0.437, identical tokens, 36 % fewer bytes (CP-12, V §4.4); runs 2–3 pending |
+| TI-LLAMA-011 | VERIFIED | 480B, three runs each: loader 0.647 t/s (0.622–0.668) vs native 0.467 (0.437–0.481), identical tokens, 36 % fewer bytes (CP-12, V §4.4) |
 | TI-LLAMA-012 | IN_PROGRESS | repeatability: 480B runs 2–3 in flight (CP-12) |
 
 ## FreeToken (A.15)
@@ -180,8 +180,8 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-480B-001…005 | ACCEPTED | CP-3, CP-5 |
 | TI-480B-006…008 | ACCEPTED | CP-4 (183 GB available vs 270 GiB; 1.8 GB/token from md0 during generation) |
 | TI-480B-009…010 | VERIFIED | replay V §4.2; live loader V §4.4 |
-| TI-480B-011 | VERIFIED (run 1) | live A/B V §4.4; runs 2–3 pending |
-| TI-480B-012 | VERIFIED (run 1) | replay V §4.2 + live loader V §4.4 |
+| TI-480B-011 | VERIFIED | live A/B, three runs per arm, V §4.4 |
+| TI-480B-012 | VERIFIED | replay V §4.2 + live loader V §4.4 (three runs) |
 
 ## Performance (A.19)
 

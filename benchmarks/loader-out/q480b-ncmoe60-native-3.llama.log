@@ -1,0 +1,21 @@
+0.00.158.301 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.254.179 W srv  llama_server: -----------------
+0.00.254.181 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.254.182 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.254.182 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.254.182 W srv  llama_server: -----------------
+0.00.255.553 I srv    load_model: loading model '/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf'
+0.00.576.222 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.00.612.758 W llama_model_loader: tensor overrides to CPU are used with mmap enabled - consider using --load-mode none for better performance
+2.52.588.868 I cmn          init: llama threadpool init, n_threads = 32
+3.07.967.730 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+3.07.972.999 I srv  llama_server: model loaded
+3.07.973.005 I srv  llama_server: listening on http://127.0.0.1:8931
+3.08.861.985 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+3.08.862.059 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+6.40.096.772 I slot print_timing: id  3 | task 0 | prompt eval time =  144799.01 ms /   111 tokens ( 1304.50 ms per token,     0.77 tokens per second)
+6.40.096.776 I slot print_timing: id  3 | task 0 |        eval time =   66431.65 ms /    32 tokens ( 2142.96 ms per token,     0.47 tokens per second)
+6.40.096.777 I slot print_timing: id  3 | task 0 |       total time =  211230.66 ms /   143 tokens
+6.40.096.785 I slot print_timing: id  3 | task 0 |    graphs reused =         30
+6.40.100.468 I slot      release: id  3 | task 0 | stop processing: n_tokens = 142, truncated = 0
+6.40.124.158 I srv    operator(): operator(): cleaning up before exit...

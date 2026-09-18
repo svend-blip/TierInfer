@@ -313,17 +313,18 @@ TierInfer server answers per expert (`docs/LOADER.md`,
 `src/tierinfer/loader.py`). The harness (`benchmarks/loader_ab.py`) runs the
 two arms cold, same binary, same flags, same prompt, greedy.
 
-**Run 1 of 3** (`benchmarks/loader-out/q480b-ncmoe60-*-1.json`; runs 2–3
-pending and appended below when in):
+**Three cold runs per arm** (`benchmarks/loader-out/q480b-ncmoe60-*.json`,
+table `q480b-ncmoe60.md`), medians with ranges:
 
-| arm | load s | prompt t/s | gen t/s | infer GB | infer reads | mean KB | await ms | tokens |
+| arm | load s | prompt t/s | gen t/s | infer GiB | infer reads | mean KB | await ms | tokens |
 |---|--:|--:|--:|--:|--:|--:|--:|---|
-| native `-ngl 99 -ncmoe 60` | 193 | 0.774 | 0.437 | 248.1 | 2 440 559 | 107 | 4.9 | reference |
-| loader, tier 150 GB, depth 0 | 37 | 0.750 | **0.622** | 157.9 | 427 924 | 387 | 2.0 | identical |
+| native `-ngl 99 -ncmoe 60` | 192 | 0.767 | **0.467** (0.437–0.481) | 246.1 | 2 255 392 | 107–116 | 4.8 | reference |
+| loader, tier 150 GB, depth 0 | 37 | 0.750 | **0.647** (0.622–0.668) | 157.9 | 426 882 | 387 | 2.0 | identical, all six runs |
 
 Per generated token the loader served 464 of 496 routed experts from its
-tier (93.6 % median hit rate), copied 454 MB in 832 faults and evicted 16
-experts; wall 1.45 s median against native's 2.29 s. The prompt batch is
+tier (93.6 % median hit rate in each of the three runs), copied 454 MB in
+832 faults and evicted 16 experts; wall 1.31–1.45 s median against
+native's 2.1–2.3 s. The three loader runs are byte-identical in I/O. The prompt batch is
 where the tier fills: 5 100 misses, 150 GB in 148 s at 1.0 GB/s — the
 device's ceiling for expert-sized reads (§1, §4.2) — so prompt speed is
 the same in both arms and dominated by storage either way.
@@ -397,7 +398,7 @@ counted (`unmappable`), never raised.
 **Tokens per second of "llama.cpp + TierInfer" — now measured (§4.4).**
 At the time of §1–§4.3 no loader existed; every TierInfer number there is
 I/O and residency under *replayed* real routing and is still presented as
-such. §4.4 is the live decode rate, one run in so far.
+such. §4.4 is the live decode rate, three runs per arm.
 
 **Compute overlap.** With no compute in the loop, prefetch lead time is
 whatever the sleeps in the `comp` arm provide (~500 ms per token, assumed).
@@ -418,7 +419,7 @@ two wrong guesses for every right one.
 | RAM behaviour | native: page cache ≈ 180 GB serving ~90 % of a 20.9 GB per-token working set; TierInfer: 100 GiB → 86.8 % hit, 150 GiB → 91.7 %, LRU-equal policy |
 | NVMe behaviour | md0 RAID0 over two USB 4M2 members; 1.7 GB/s sequential at load, ~0.75 GB/s for expert-sized random reads at <50 % utilisation; md merges native's 24 KB faults fivefold, TierInfer's 361 KB requests barely |
 | native generation | 0.241 t/s cold median at `-ngl 0` (0.196–0.244 over six runs); 0.38–0.51 with attention on the GPU; prompt class halves it (0.72 vs 0.39 during capture) |
-| TierInfer generation | **0.622 t/s** under llama.cpp with the loader, 150 GB tier, run 1 (§4.4); native on the same flags 0.437 |
+| TierInfer generation | **0.647 t/s** (0.622–0.668) under llama.cpp with the loader, 150 GB tier, three runs (§4.4); native on the same flags 0.467 (0.437–0.481); tokens identical |
 | native I/O | 1.82 GB and 74 098 reads of 24 KB per token (cold median) |
 | TierInfer I/O | 1.30 GB / 3 771 reads (100 GiB), **0.63 GB / 1 815 reads (150 GiB)** per token, 361 KB each; expert-sized `preadv`, one per projection |
 | RAM cache effectiveness | 86.8 % / 91.7 % hit with less RAM than native's page cache; 36–65 % fewer bytes, 20–40× fewer operations |
