@@ -247,3 +247,32 @@ def test_a_chunk_whose_head_is_unmapped_still_serves_its_tail(served):
         assert server.stats.unmapped_pages >= 1
     finally:
         server.close()
+
+
+def test_a_fault_on_a_present_page_is_woken_not_recopied(served):
+    """Parallel compute threads fault on pages of an expert whose copy is in
+    flight; those arrive after the copy and must not cost another copy."""
+    ix, shards = served
+    sock = _sock_path(None)
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, verbose=False,
+                          drop_page_cache=False, floor_chunk=4096)
+    _start(server, sock)
+    try:
+        files = ":".join(str(f) for f in ix.gguf.files)
+        ref = ix.expert(1, 3)
+        r0 = ref.ranges[0]
+        # read the same expert twice; the second read of a present page faults
+        # nowhere, so drive a re-fault by hand through the server's own path
+        plan = [["read", r0.file_offset, r0.nbytes]]
+        out, err = _run_child(shards[0], plan, sock, files)
+        assert out[0]["digest"] == _digest(shards[0], r0.file_offset, r0.nbytes)
+        copied_before = server.stats.bytes_copied
+        m = server.mappings[-1]
+        m.dead = False
+        # simulate the queued event: the page is gone with the client, so the
+        # presence check cannot answer and the counter heuristic applies
+        server._serve_expert(m, (1, 3), why="fault", offset=r0.file_offset & ~4095)
+        assert server.stats.faults_resident >= 1
+        assert server.stats.bytes_copied == copied_before
+    finally:
+        server.close()

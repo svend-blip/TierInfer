@@ -174,9 +174,30 @@ class Mapping:
     uffd: int
     layout: FileLayout
     pid: int
+    pagemap_fd: int = -1          # /proc/<pid>/pagemap, when readable
+    dead: bool = False
 
     def contains(self, addr: int) -> bool:
         return self.base <= addr < self.base + self.length
+
+    def open_pagemap(self) -> None:
+        try:
+            self.pagemap_fd = os.open(f"/proc/{self.pid}/pagemap", os.O_RDONLY)
+        except OSError:
+            self.pagemap_fd = -1
+
+    def page_present(self, offset: int) -> bool | None:
+        """Whether the client's page at this file offset is present, from
+        /proc/<pid>/pagemap; ``None`` when that cannot be read here."""
+        if self.pagemap_fd < 0:
+            return None
+        try:
+            raw = os.pread(self.pagemap_fd, 8, ((self.base + offset) // PAGE) * 8)
+        except OSError:
+            return None
+        if len(raw) != 8:
+            return None
+        return bool(int.from_bytes(raw, "little") >> 63 & 1)
 
 
 # -- the residency tier -----------------------------------------------------
@@ -367,6 +388,7 @@ class LoaderServer:
         if layout is None:
             layout = self.layouts[path] = FileLayout(self.index, path)
         m = Mapping(path=path, base=int(base_s, 16), length=int(len_s), uffd=uffd, layout=layout, pid=pid)
+        m.open_pagemap()
         with self._lock:
             self.mappings.append(m)
             new_uffd = all(x.uffd != uffd for x in self.mappings[:-1])
@@ -429,6 +451,8 @@ class LoaderServer:
             self._repeats.clear()
         if self.debug:
             self._say(f"fault {addr:#x} flags {flags:#x} off {offset} -> {region.key if region else None}")
+        if m.dead:
+            return
         if region is None:
             # Padding between tensors, or the tail past EOF: the file's bytes
             # there (or zeros past its end) — never anything else.
@@ -438,7 +462,7 @@ class LoaderServer:
             self._serve_floor(m, offset)
         else:
             self.stats.faults_expert += 1
-            self._serve_expert(m, region.key, why="fault")
+            self._serve_expert(m, region.key, why="fault", offset=offset)
         # Wake the faulting page explicitly. A copy wakes the range it copied;
         # a page found already present is not copied and so wakes nobody, and
         # a thread that faulted on it in the window between its fault and the
@@ -451,7 +475,7 @@ class LoaderServer:
             fcntl.ioctl(m.uffd, UFFDIO_WAKE, req)
             self.stats.wakes += 1
         except OSError as e:
-            if e.errno != errno.ENOENT:
+            if e.errno not in (errno.ENOENT, errno.ESRCH):
                 self._say(f"UFFDIO_WAKE {m.base + a:#x}: {e}")
 
     def _mapping_for(self, addr: int) -> Mapping | None:
@@ -462,7 +486,7 @@ class LoaderServer:
 
     # -- serving ------------------------------------------------------------
 
-    def _serve_expert(self, m: Mapping, key: object, *, why: str) -> None:
+    def _serve_expert(self, m: Mapping, key: object, *, why: str, offset: int = -1) -> None:
         """Materialise all slabs of one expert in the client, once."""
         with self._lock:
             if key in self.cache:
@@ -472,16 +496,21 @@ class LoaderServer:
                 # this is a queued event from a thread that faulted while the
                 # copy was in flight — llama.cpp's compute threads touch one
                 # expert's pages in parallel — and its page is present now;
-                # the explicit wake after this call releases it. The first
-                # live run re-copied the whole expert for each of these
-                # (42 878 redundant copies in 24 000 faults). Only a page
-                # that keeps faulting gets the copy repeated, as a repair.
-                n = self._resident_refaults.get(key, 0) + 1
-                self._resident_refaults[key] = n
-                if n < 3:
+                # the explicit wake after this call releases it. The second
+                # live run guessed at that with a counter and re-copied
+                # every third such fault (36 000 repairs in 30 tokens, 8.9 GB
+                # a token for 1 GB of misses). Now the client's own page
+                # table answers: present → wake only; absent → copy.
+                present = m.page_present(offset) if offset >= 0 else None
+                if present is None:
+                    n = self._resident_refaults.get(key, 0) + 1
+                    self._resident_refaults[key] = n
+                    present = n < 3
+                    if not present:
+                        self._resident_refaults[key] = 0
+                if present:
                     self.stats.faults_resident += 1
                     return
-                self._resident_refaults[key] = 0
                 self.stats.faults_repaired += 1
             ev = self._serving.get(key)
             if ev is not None:
@@ -519,12 +548,16 @@ class LoaderServer:
         tag = (m.path, chunk)
         with self._lock:
             if tag in self._floor_done:
-                n = self._resident_refaults.get(tag, 0) + 1
-                self._resident_refaults[tag] = n
-                if n < 3:
+                present = m.page_present(offset)
+                if present is None:
+                    n = self._resident_refaults.get(tag, 0) + 1
+                    self._resident_refaults[tag] = n
+                    present = n < 3
+                    if not present:
+                        self._resident_refaults[tag] = 0
+                if present:
                     self.stats.faults_resident += 1
                     return
-                self._resident_refaults[tag] = 0
                 self._floor_done.discard(tag)
                 self.stats.faults_repaired += 1
             ev = self._serving.get(tag)
@@ -631,6 +664,12 @@ class LoaderServer:
                         end = b
                     else:
                         end = cur + max(PAGE, ((end - cur) // 2) // PAGE * PAGE)
+                elif e.errno == errno.ESRCH:
+                    # the client process is gone; nothing to serve any more
+                    if not m.dead:
+                        m.dead = True
+                        self._say(f"pid {m.pid} has exited; its mapping of {m.path.name} is retired")
+                    return skipped
                 else:
                     raise LoaderError(f"UFFDIO_COPY at {m.base + cur:#x}: {e}") from e
         self.stats.copy_seconds += time.perf_counter() - t0
