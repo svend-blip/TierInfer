@@ -1,0 +1,84 @@
+tierinfer: serving FreeToken banks; start FreeToken with
+  TIERINFER_SOCK=/tmp/tierinfer-ft-571955.sock (and --moe-cpu-layers for the tiered layers)
+tierinfer-loader: listening on /tmp/tierinfer-ft-571955.sock; RAM tier 8.0 GB (3098 experts), 8 fault workers, prefetch depth 8
+tierinfer-loader: pid 572012: control channel open
+tierinfer-loader: pid 572012: eviction channel open
+tierinfer-loader: pid 572012: serving gate_up_packed#L00000 (0.78 GB at 0x7116ea000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00004 (0.78 GB at 0x711622000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00008 (0.78 GB at 0x71155a000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00012 (0.78 GB at 0x711492000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00016 (0.78 GB at 0x7113ca000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00020 (0.78 GB at 0x711302000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00024 (0.78 GB at 0x71123a000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00028 (0.78 GB at 0x711172000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00032 (0.78 GB at 0x7110aa000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00036 (0.78 GB at 0x710fe2000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00040 (0.78 GB at 0x710f1a000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_packed#L00044 (0.78 GB at 0x710e52000000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00000 (0.10 GB at 0x710db5c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00004 (0.10 GB at 0x710d9cc00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00008 (0.10 GB at 0x710d83c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00012 (0.10 GB at 0x710d6ac00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00016 (0.10 GB at 0x710d51c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00020 (0.10 GB at 0x710d38c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00024 (0.10 GB at 0x710d1fc00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00028 (0.10 GB at 0x710d06c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00032 (0.10 GB at 0x710cedc00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00036 (0.10 GB at 0x710cd4c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00040 (0.10 GB at 0x710cbbc00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_scale#L00044 (0.10 GB at 0x710ca2c00000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00000 (0.00 GB at 0x71179c019000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00004 (0.00 GB at 0x71177977f000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00008 (0.00 GB at 0x71177827d000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00012 (0.00 GB at 0x711765433000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00016 (0.00 GB at 0x711764f33000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00020 (0.00 GB at 0x711764a33000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00024 (0.00 GB at 0x711764533000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00028 (0.00 GB at 0x711764033000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00032 (0.00 GB at 0x71174f2ff000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00036 (0.00 GB at 0x71174edff000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00040 (0.00 GB at 0x71174e8ff000), 512 regions
+tierinfer-loader: pid 572012: serving gate_up_global#L00044 (0.00 GB at 0x71174e3ff000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00000 (0.39 GB at 0x710c77000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00004 (0.39 GB at 0x710c13000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00008 (0.39 GB at 0x710baf000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00012 (0.39 GB at 0x710b4b000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00016 (0.39 GB at 0x710ae7000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00020 (0.39 GB at 0x710a83000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00024 (0.39 GB at 0x710a1f000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00028 (0.39 GB at 0x7109bb000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00032 (0.39 GB at 0x710957000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00036 (0.39 GB at 0x7108f3000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00040 (0.39 GB at 0x71088f000000), 512 regions
+tierinfer-loader: pid 572012: serving down_packed#L00044 (0.39 GB at 0x71082b000000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00000 (0.05 GB at 0x711720e00000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00004 (0.05 GB at 0x7107d3800000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00008 (0.05 GB at 0x7107c7000000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00012 (0.05 GB at 0x7107ba800000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00016 (0.05 GB at 0x7107ae000000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00020 (0.05 GB at 0x7107a1800000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00024 (0.05 GB at 0x710795000000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00028 (0.05 GB at 0x710788800000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00032 (0.05 GB at 0x71077c000000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00036 (0.05 GB at 0x71076f800000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00040 (0.05 GB at 0x710763000000), 512 regions
+tierinfer-loader: pid 572012: serving down_scale#L00044 (0.05 GB at 0x710756800000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00000 (0.00 GB at 0x71174ddbf000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00004 (0.00 GB at 0x71174d3bf000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00008 (0.00 GB at 0x71174c9bf000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00012 (0.00 GB at 0x711720b80000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00016 (0.00 GB at 0x711720180000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00020 (0.00 GB at 0x71074c800000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00024 (0.00 GB at 0x71074be00000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00028 (0.00 GB at 0x71074b400000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00032 (0.00 GB at 0x71074aa00000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00036 (0.00 GB at 0x71074a000000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00040 (0.00 GB at 0x710749600000), 512 regions
+tierinfer-loader: pid 572012: serving down_global#L00044 (0.00 GB at 0x710748c00000), 512 regions
+tierinfer-loader: token 1: hit 0.0% (0/120) faults 9220 copied 16.1 GB evicted 3139 prefetch 0/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 2: hit 25.0% (60/240) faults 11170 copied 16.4 GB evicted 3244 prefetch 48/0/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 3: hit 34.2% (123/360) faults 12250 copied 16.5 GB evicted 3272 prefetch 48/5/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 20: hit 72.6% (1742/2400) faults 28617 copied 17.6 GB evicted 3699 prefetch 48/11/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 40: hit 78.8% (3784/4800) faults 42782 copied 18.5 GB evicted 4036 prefetch 48/12/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: token 60: hit 82.7% (5952/7200) faults 52898 copied 19.0 GB evicted 4262 prefetch 48/14/0/0 resident 3098 (8.0 GB)
+tierinfer-loader: pid 572012: control channel closed

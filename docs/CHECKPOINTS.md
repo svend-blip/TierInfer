@@ -478,3 +478,68 @@ inferred from bytes read.
   file and ran native mmap: 0.01 GB of I/O, 57 GB RSS) and are not loader
   measurements. Fixed since (`stood_aside` flag, harness waits for accept,
   shim retries 10 s); the 480B runs above are with the fix.
+
+## CP-13 — an NVMe tier under FreeToken (item 6; TI-FT-*)
+
+- **Revision:** TierInfer `0966281` (`tierinfer.ftw`, `tierinfer.client`,
+  `serve <ftw-dir>`, `ROUTED`, next-step prefetch); FreeToken checkout
+  `~/freetoken-qwen38` on the local branch `tierinfer-tier` (`c50484b` on
+  upstream `9535656`), the patch kept in `patches/freetoken-tierinfer-tier.patch`.
+  Design: `docs/superpowers/specs/2026-09-18-freetoken-tier-design.md`;
+  how it runs: `docs/FREETOKEN.md`.
+- **What runs:** `benchmarks/freetoken_ab.py` on the Human's Flash-Next
+  checkpoint (`qwen38-flash-next-abliterated-ftw-fixed`, 121 GB FTW, 48
+  MoE layers × 512 experts, 2.77 MB per expert over six banks), `ft serve
+  --moe-strategy offload --moe-cpu-layers 12` (layers 0, 4, …, 44 on the CPU
+  executor; 36 on the GPU), 32 k context, greedy, 95-token prompt, 63
+  generated tokens, page cache dropped before every run. Native: all banks
+  read at load. Tiered: the 12 CPU-executor layers' banks (17.1 GB) are
+  TierInfer-served buffers under a budget. Table:
+  `benchmarks/freetoken-out/flashnext.md`.
+- **Correctness:** greedy output identical across all eleven runs
+  (native ×2, tiered 8 GB ×3, 16 GB ×2, 8 GB + prefetch ×2, smoke); the
+  tiered banks' rows are the shards' bytes (TI-FT-010).
+- **Result:**
+
+  | arm | load s | wall s (95+63 tok) | FreeToken decode t/s | infer I/O | load I/O |
+  |---|--:|--:|--:|--:|--:|
+  | native (all 121 GB resident) | 55 | 4.3 | 34.8 / 35.0 | 0.01 GiB | 72.7 GiB |
+  | tiered, 16 GB budget (holds the 12 layers) | 44 | 25.1 / 25.2 | **35.4 / 34.8** | 15.5 GiB | 57.3 GiB |
+  | tiered, 8 GB budget (47 % of them) | 44 | 38.5–40.3 | 5.4–6.1 | 18.7 GiB / 83 k reads @ 235 KB | 57.3 GiB |
+  | tiered, 8 GB + prefetch depth 8 | 44 | 38.2 | 6.3 | 18.7 GiB | 57.3 GiB |
+
+  With the budget holding the layers, **decode is native speed** (0
+  misses, 27 ms per step, FreeToken's own 35 t/s) and the whole cost is
+  prefill: FreeToken's whole-layer pageable copy pulls every row through
+  the tier (17.1 GB, 9 150 faults, ~23 s at 0.75 GB/s), which is the same
+  bytes native reads at load — load 44 s + prefill 23 s against native's
+  55 s + 0. Under a budget below the layers (8 GB) the tier evicts through
+  prefill (3 200 evictions) and decode pays per miss: **85.8 % hit rate**
+  per step (median; 17 misses of 120 routed, 42 MB, 750–800 faults of
+  which most are threads finding the page present), 212–246 ms per step
+  against native's 29 ms. Prefetch for the next step at depth 8 issued 48
+  guesses in 62 steps (the predictor's top guesses are mostly resident
+  already), 14 useful, 0 late, 0 wasted: no measurable effect (6.3 vs 6.1
+  t/s), the same finding as the 480B replay.
+- **Two defects found by the numbers, both in the routing report.** The
+  first two tiered runs showed 100 % hits with 50 MB copied per step:
+  (1) the CPU executor's per-layer routing log was a pinned-to-pinned
+  `copy_`, a CPU memcpy at capture time and no graph node, so every step
+  reported the capture step's ids (`c50484b`); (2) the log must be read
+  after the compute stream drains (`4e7b885`); and on the server side a
+  `ROUTED` burst's first line is the token boundary, which cleared the
+  faulted set before the burst was scored (`134eee8`). `docs/FREETOKEN.md`
+  records what a token event pairs with.
+- **Where TierInfer stops and FreeToken begins** (TI-FT-003/004): the GPU
+  slot cache and the pinned banks of GPU layers are FreeToken's and
+  untouched; TierInfer serves only banks FreeToken would otherwise fill at
+  load, for layers it decodes on the CPU; `pin()` on a tiered bank is
+  refused (it would be a load), `lock()` a no-op; without `TIERINFER_SOCK`
+  the patched FreeToken behaves as before.
+- **Acceptance IDs moved:** TI-FT-002/005/006/008/009/010/011 → VERIFIED;
+  TI-FT-003/004 VERIFIED (already); TI-FT-007 → VERIFIED (FreeToken's
+  `/v1/stats` VRAM and slot cache beside TierInfer's, which holds no VRAM
+  here by design); TI-FT-012 → PARTIAL (unset socket → unpatched path,
+  absent tier → explicit error, refused evictions counted; failure
+  injections under a running FreeToken not done). TI-PREF-008 (live) →
+  VERIFIED, negative under FreeToken as in replay.

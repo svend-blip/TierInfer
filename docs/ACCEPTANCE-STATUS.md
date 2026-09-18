@@ -97,7 +97,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-PREF-003 | VERIFIED | in-flight/resident dedup (`Prefetcher.before_layer`, loader `_serving`) |
 | TI-PREF-004…006 | VERIFIED | useful/late/wasted split (`8d33288`; RO) |
 | TI-PREF-007 | VERIFIED | fail-reads (CP-8b) |
-| TI-PREF-008 | VERIFIED (replay: none) / IN_PROGRESS (live) | V §4.2 negative result; loader A/B pending |
+| TI-PREF-008 | VERIFIED (negative) | replay V §4.2; live under FreeToken: depth 8 → 48 guesses in 62 steps, 14 useful, 6.3 vs 6.1 t/s (CP-13) |
 
 ## Policy (A.12)
 
@@ -142,17 +142,17 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | ID | Status | Evidence / blocker |
 |---|---|---|
 | TI-FT-001 | IMPLEMENTED_UNVERIFIED | `adapters/freetoken.py` — configuration in, counters out (AUD 13) |
-| TI-FT-002 | IMPLEMENTED_UNVERIFIED | FreeToken patch `patches/freetoken-tierinfer-tier.patch` (`HostResidency.TIERED`, `HostBank(backing="tierinfer")`, CPU-executor `ROUTED`); runtime trace on Flash-Next pending |
+| TI-FT-002 | VERIFIED | Flash-Next runs: 12 tiered layers served during generation, 58 k faults, 20 GB (CP-13) |
 | TI-FT-003 | VERIFIED | design spec + `docs/FREETOKEN.md`: slot cache (VRAM) and pinned/locked banks (RAM) are FreeToken's; TierInfer only serves banks FreeToken would otherwise fill at load |
 | TI-FT-004 | VERIFIED | ownership explicit in code and docs: `pin()` refuses a tiered bank, GPU layers untouched, tier applies to `--moe-cpu-layers` only |
-| TI-FT-005 | IN_PROGRESS | `tierinfer serve <ftw-dir>` + `tierinfer.client` built and tested on a synthetic checkpoint; Flash-Next run pending |
-| TI-FT-006 | IN_PROGRESS | loader telemetry (faults, bytes, hit rate by faults, evictions) per tiered layer; FreeToken's `/v1/stats` beside it in `freetoken_ab.py` |
-| TI-FT-007 | IN_PROGRESS | FreeToken's slot cache stats and VRAM from `/v1/stats`; TierInfer holds no VRAM under FreeToken by design |
-| TI-FT-008 | IMPLEMENTED_UNVERIFIED | real `topk_ids` from the CPU executor's pinned log → `ROUTED` |
-| TI-FT-009 | IN_PROGRESS | separate namespaces: `loader.*` vs FreeToken's own stats in the run record |
-| TI-FT-010 | IN_PROGRESS | greedy output compared across arms by `freetoken_ab.py`; synthetic rows verified byte-exact |
-| TI-FT-011 | IN_PROGRESS | `benchmarks/freetoken_ab.py` ready; needs the GPU (480B harness running) |
-| TI-FT-012 | IN_PROGRESS | `TIERINFER_SOCK` unset → unpatched behaviour; tier absent → explicit `RuntimeError`; refused evictions counted; failure injections under FreeToken pending |
+| TI-FT-005 | VERIFIED | the tier serves 17.1 GB of banks under 16 GB / 8 GB budgets on Flash-Next; decode at native speed when the budget holds the layers (CP-13) |
+| TI-FT-006 | VERIFIED | per-step hits/misses/bytes/evictions from TierInfer beside FreeToken's `/v1/stats` (CP-13 table) |
+| TI-FT-007 | VERIFIED | FreeToken's `vram_bytes`/slot cache in the run record; TierInfer holds no VRAM under FreeToken by design (CP-13) |
+| TI-FT-008 | VERIFIED | real `topk_ids` (device→host log, stream drained) → `ROUTED`; 85.8 % hit rate consistent with bytes copied (CP-13) |
+| TI-FT-009 | VERIFIED | `loader.*` vs FreeToken's `stats_before/after` in every run JSON (CP-13) |
+| TI-FT-010 | VERIFIED | greedy output identical across eleven runs, native and tiered (CP-13) |
+| TI-FT-011 | VERIFIED | `benchmarks/freetoken-out/flashnext.md`: native ×2, tiered 8/16 GB, prefetch; repeated (CP-13) |
+| TI-FT-012 | PARTIAL | `TIERINFER_SOCK` unset → unpatched behaviour; tier absent → explicit `RuntimeError`; refused evictions counted; failure injections under a running FreeToken not done |
 
 ## Telemetry (A.16)
 
