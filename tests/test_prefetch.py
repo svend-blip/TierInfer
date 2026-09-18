@@ -212,6 +212,14 @@ def test_dropping_unused_prefetches_returns_every_buffer(parts):
     p.before_layer(0, {})
     p.on_routing(0, [0])
     p.end_token()
+    # A token boundary no longer waits for a read that is mid-flight: it
+    # orphans the load and reaps its buffer once the worker is done. So the
+    # buffers are all back *soon*, not *now* — and never leaked.
+    deadline = time.perf_counter() + 5
+    while (pool.in_use or p.orphans) and time.perf_counter() < deadline:
+        time.sleep(0.005)
+        p._reap()
+    assert p.orphans == 0
     assert pool.in_use == 0, "a token boundary leaked buffers"
 
 
