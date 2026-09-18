@@ -1,0 +1,100 @@
+{
+ "label": "q480b-ncmoe60-loader-1",
+ "cmd": [
+  "/home/svend/llama.cpp-qwen38/build/bin/llama-server",
+  "--port",
+  "8931",
+  "--host",
+  "127.0.0.1",
+  "-m",
+  "/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf",
+  "-c",
+  "4096",
+  "-t",
+  "32",
+  "--no-warmup",
+  "-ngl",
+  "99",
+  "-ncmoe",
+  "60",
+  "-fa",
+  "on"
+ ],
+ "load_s": 37.04680013656616,
+ "prompt_n": 111,
+ "prompt_s": 148.08556099999998,
+ "prompt_tps": 0.7495666643691211,
+ "gen_n": 32,
+ "gen_s": 49.833661,
+ "gen_tps": 0.6220694883323945,
+ "ttft_s": 148.08556099999998,
+ "wall_s": 197.92084288597107,
+ "content": "Designing an expert cache for a sparse mixture-of-experts (MoE) model with weights stored on NVMe RAID involves several critical components: cache policy,",
+ "io_load": {
+  "reads": 76352,
+  "bytes": 32249794560
+ },
+ "io_infer": {
+  "reads": 427924,
+  "bytes": 169563873280,
+  "mean_read_bytes": 396247.6357484039,
+  "await_ms": 1.9842892663183183,
+  "members": {
+   "sda": {
+    "reads": 244399,
+    "bytes": 100913754112,
+    "mean_read_bytes": 412905.75702846574
+   },
+   "sdb": {
+    "reads": 245499,
+    "bytes": 100899913728,
+    "mean_read_bytes": 410999.2860581917
+   }
+  }
+ },
+ "server": {
+  "VmHWM": 164479954944,
+  "VmRSS": 164426829824,
+  "majflt": 0
+ },
+ "loader": {
+  "v": 1,
+  "type": "event",
+  "kind": "run.close",
+  "at": 1789719544.385787,
+  "run": "36649923a463",
+  "loader.faults": 59212,
+  "loader.faults_expert": 58674,
+  "loader.faults_floor": 538,
+  "loader.faults_duplicate": 4146,
+  "loader.faults_resident": 47502,
+  "loader.faults_repaired": 387,
+  "loader.bytes_copied": 201805099008,
+  "loader.copy_seconds": 40.32484541822487,
+  "loader.read_seconds": 215.87661165415557,
+  "loader.routed": 21194,
+  "loader.hits": 14435,
+  "loader.misses": 6759,
+  "loader.prefetch_issued": 0,
+  "loader.prefetch_useful": 0,
+  "loader.prefetch_late": 15,
+  "loader.prefetch_wasted": 0,
+  "loader.evictions": 885,
+  "loader.evict_bytes": 25770053632,
+  "loader.tokens": 32,
+  "loader.read_retries": 0,
+  "loader.unmaps": 28,
+  "loader.unmapped_bytes": 293514916320,
+  "loader.forgotten": 5851,
+  "loader.unmapped_pages": 0,
+  "loader.repeat_faults": 0,
+  "loader.copy_eagain": 0,
+  "loader.resident": 538,
+  "loader.resident_bytes": 9001758720,
+  "storage.bytes_read": 201805092256,
+  "storage.operations": 20746,
+  "storage.seconds": 215.16854664678976
+ },
+ "arm": "loader",
+ "rep": 1
+}
