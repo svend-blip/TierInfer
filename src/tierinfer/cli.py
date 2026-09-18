@@ -74,7 +74,20 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument("expert", type=int)
     exp.add_argument("--json", action="store_true")
 
+    srv = sub.add_parser("serve", help="answer a preloaded llama.cpp's page faults with whole experts")
+    srv.add_argument("model")
+    srv.add_argument("--sock", required=True, help="unix socket path; the client gets TIERINFER_SOCK=<this>")
+    srv.add_argument("--ram-gb", type=float, default=0.0, help="RAM tier in GiB (0 = autoconfig's share)")
+    srv.add_argument("--workers", type=int, default=8)
+    srv.add_argument("--depth", type=int, default=0, help="prefetch depth per layer (0 = off)")
+    srv.add_argument("--telemetry", default=None, help="JSONL path")
+    srv.add_argument("--keep-page-cache", action="store_true",
+                     help="do not drop the page cache behind reads (double caching; for diagnosis)")
+    srv.add_argument("--quiet", action="store_true")
+
     args = p.parse_args(argv)
+    if args.command == "serve":
+        return _serve(args)
     try:
         ix = load(args.model)
         if args.command == "inspect":
@@ -103,3 +116,29 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _serve(args) -> int:
+    from .autoconfig import configure
+    from .loader import LoaderServer
+    from .telemetry import Telemetry
+    try:
+        ix = load(args.model)
+    except (GGUFError, OSError) as exc:
+        print(f"tierinfer: {exc}", file=sys.stderr)
+        return 1
+    ram = int(args.ram_gb * GB) if args.ram_gb > 0 else configure(ix).ram_bytes
+    files = ":".join(str(f) for f in ix.gguf.files)
+    print("tierinfer: start the runtime with\n"
+          f"  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK={args.sock} "
+          f"TIERINFER_FILES={files}", file=sys.stderr, flush=True)
+    tel = Telemetry(args.telemetry) if args.telemetry else None
+    server = LoaderServer(ix, ram_bytes=ram, workers=args.workers, depth=args.depth, telemetry=tel,
+                          verbose=not args.quiet, drop_page_cache=not args.keep_page_cache)
+    try:
+        server.serve(args.sock)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.close()
+    return 0
