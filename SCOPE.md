@@ -59,13 +59,24 @@ Each step must be measurable on its own before the next begins.
    (`benchmarks/STREAMING.md`): 3.47x demand paging at eight workers, and
    3.0 GB/s against llama.cpp's own 1.54 GB/s cold load, with every method
    returning byte-identical data. Concurrency is the whole difference — a
-   single-threaded pread is slower than faulting.*
+   single-threaded pread is slower than faulting.* *480B addendum (2026-09-18):
+   on the USB RAID0 the 480B sits on, eight concurrent expert reads measured
+   0.95× a serial one — the pipe fills at ~0.75 GB/s for expert-sized random
+   reads either way — so concurrency is a device property and
+   `autoconfig.probe_concurrency` now measures it rather than the code
+   assuming it (`benchmarks/480b/VALIDATION-480B.md` §4.3).*
 5. **Bounded RAM expert cache.** Insertion, hit, miss, eviction, pinning,
    adaptive retention. — *done and measured: +1.5 to +13.1 points of hit rate
    over LRU (widest where the cache is smallest), and victim selection is a
    lazy min-heap with revalidation, flat at 8 µs from 1 000 to 6 000
    residents against the earlier scan's 354 to 1 031 µs, costing 0.1 point of
    hit rate; every fall back to the exact scan is counted in `heap_fallbacks`*
+   *480B addendum: holding the real bytes under real routing on the 480B,
+   86.8 % hit at 100 GiB and 91.7 % at 150 GiB, reading 36–65 % fewer bytes in
+   20–40× fewer operations than Linux demand paging with more RAM
+   (`VALIDATION-480B.md` §4). Feeding the reload-cost term with measured
+   per-load times made it evict by queueing noise (−3 points); the term is
+   constant until a per-expert cost exists.*
 6. **llama.cpp integration.** Real inference with TierInfer assisting
    residency, benchmarkable against native mmap. A clean baseline mode must
    remain. — *routing capture done and nothing in llama.cpp is patched:
@@ -91,8 +102,14 @@ Each step must be measurable on its own before the next begins.
    eliminated, accuracy, lead time and wasted bandwidth. — *built: the one
    place a guess causes I/O, and the only place the safety rule has teeth —
    a routed expert nobody anticipated gets an exact synchronous read, and is
-   counted as a stall. All four numbers reported. Not yet measured end to
-   end: that needs goal 6.*
+   counted as a stall. All four numbers reported — plus `late`, split from
+   `useful` by whether the load had finished when the routing asked.*
+   *480B addendum: measured end to end under replayed real routing (no
+   compute — goal 6): prefetch at depth 8 lands within 1 % of cache-only on
+   every I/O figure; without compute to overlap, two of three speculative
+   reads are late or wasted, and depth 16 doubles the waste for nothing. On
+   this model the predictor names experts the cache already holds. A
+   negative result (`VALIDATION-480B.md` §4).*
 8. **Expert prediction and prerouter.** Ranked prediction of upcoming
    experts, evaluated against actual routing. — *four predictors (frequency,
    persistence, transition, adaptive blend) and a recall@k harness that never
@@ -167,7 +184,10 @@ Each step must be measurable on its own before the next begins.
     that cannot work: a context whose KV cache will not fit, a host that
     cannot hold one expert, or a VRAM budget below one token's working set —
     goal 9's zero-hit-rate case, which is why 131k context is refused on this
-    host.*
+    host.* *480B addendum: derives correctly for the split `qwen3moe` model
+    (681 VRAM experts at 4k, 131k refused), and `configure_measured` adds the
+    one figure that needs the device touched — whether concurrent demand
+    reads pay — from a one-second probe on the model's own files.*
 15. **Failure safety.** A prediction miss falls back to an exact load.
     Always. — *done, and stated in one place rather than left distributed
     across the modules that happen to honour it. `exact_load` consults

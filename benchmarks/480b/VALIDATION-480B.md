@@ -171,9 +171,20 @@ to the ~180 GB page cache native had); cold start.
 | prefetch depth 8, **150 GiB** | **1 147** | 1 033 | **91.6 %** | **0.63** | **1 826** | 365 | 403 | 888 / 140 / 155 / 593 | 16 | 40 |
 | prefetch depth 8, 100 GiB, **code trace** | 3 661 | 3 303 | 73.5 % | 3.21 | 9 360 | 360 | 403 | 5 730 / 768 / 968 / 3 994 | 106 | 120 |
 | prefetch depth 8, 100 GiB, page cache allowed | 1 367 | 1 331 | 82.5 % | 0.79 | 2 315 | 365 | 404 | 7 873 / 957 / 2 139 / 4 777 | 129 | 66 |
+| **final code**, cache only, 100 GiB (serial) | 1 713 | 1 559 | 86.8 % | 1.30 | 3 771 | 362 | 404 | — | 0 | 66 |
+| **final code**, prefetch depth 8, 100 GiB (serial) | 1 731 | 1 542 | 86.8 % | 1.30 | 3 762 | 362 | 404 | 809 / 253 / 32 / 524 | 14 | 64 |
+| **final code**, cache only, **150 GiB** (serial) | **1 034** | 921 | **91.7 %** | **0.63** | **1 815** | 364 | 402 | — | 0 | 41 |
+| **final code**, cache only, 100 GiB, **code trace** | 3 813 | 3 431 | 73.4 % | 3.35 | 9 716 | 359 | 403 | — | 0 | 132 |
 
 Every arm ran to completion; no arm delivered a byte that differed from the
-file (the verification arms in §6 check that on the same path).
+file (the verification arms in §6 check that on the same path). The rows
+marked **final code** were run after §4.3's two corrections (the reload-cost
+term constant again, demand reads serial on this device) and are the ones
+to quote; the earlier rows are kept because the difference between them is
+itself a finding. Under the final code, prefetch at depth 8 issues 809
+speculative reads for 150 tokens, 253 of them useful, 524 wasted, and lands
+within 1 % of cache-only on every column — the predictor mostly names
+experts the cache already holds.
 
 ### 4.2 What the arms say
 
@@ -355,4 +366,43 @@ counted (`unmappable`), never raised.
 TierInfer's buffers under llama.cpp's `ggml_mul_mat_id`; the audit names the
 point and `SCOPE.md` goal 6 carries it as the remaining work. Every TierInfer
 number in this document is I/O and residency under *replayed* real routing;
-none is a decode rate, and none is presented as one.
+none is a decode rate, and none is presented as one. The honest comparison
+available is I/O per token at equal or smaller RAM (§4), and it is the one
+made.
+
+**Compute overlap.** With no compute in the loop, prefetch lead time is
+whatever the sleeps in the `comp` arm provide (~500 ms per token, assumed).
+Whether real attention time on this model would let prefetch hide more is
+unmeasured; what is measured is that at recall@16 of 56–67 % it would hide
+two wrong guesses for every right one.
+
+**A real NVMe latency spike.** Not injected; `await` stayed within
+1.4–4.2 ms across every arm. The timeout path is covered by a unit test.
+
+## 8. Summary against addendum §23
+
+| field | finding |
+|---|---|
+| Model / quantization / size | Qwen3-Coder-480B-A35B-Instruct, Q4_K_M (Q4_K + Q6_K down in 30 of 62 layers), 6 shards, 270.1 GiB |
+| llama.cpp / TierInfer | b10482 `8b8640097`; TierInfer `main`, revisions per checkpoint |
+| VRAM configuration | native offload point `-ngl 99 -ncmoe 60` (22.3 GB); TierInfer VRAM tier 792 slots (23 GB) at 4 096 context from the derived budget |
+| RAM behaviour | native: page cache ≈ 180 GB serving ~90 % of a 20.9 GB per-token working set; TierInfer: 100 GiB → 86.8 % hit, 150 GiB → 91.7 %, LRU-equal policy |
+| NVMe behaviour | md0 RAID0 over two USB 4M2 members; 1.7 GB/s sequential at load, ~0.75 GB/s for expert-sized random reads at <50 % utilisation; md merges native's 24 KB faults fivefold, TierInfer's 361 KB requests barely |
+| native generation | 0.241 t/s cold median at `-ngl 0` (0.196–0.244 over six runs); 0.38–0.51 with attention on the GPU; prompt class halves it (0.72 vs 0.39 during capture) |
+| TierInfer generation | **not measurable** — no loader (§7) |
+| native I/O | 1.82 GB and 74 098 reads of 24 KB per token (cold median) |
+| TierInfer I/O | 1.30 GB / 3 771 reads (100 GiB), **0.63 GB / 1 815 reads (150 GiB)** per token, 361 KB each; expert-sized `preadv`, one per projection |
+| RAM cache effectiveness | 86.8 % / 91.7 % hit with less RAM than native's page cache; 36–65 % fewer bytes, 20–40× fewer operations |
+| VRAM working-set effectiveness | 22.1 % hit from 792 slots on routing over 9 920 experts; 26.5 GB/s pinned transfers, 0.99 ms each; synchronous staging costs ~1.1 s per token in the replay |
+| prefetch effectiveness | **none measurable**: within 1 % of cache-only at 100 and 150 GiB; without compute two of three speculative reads are late or wasted; depth 16 doubles waste for nothing |
+| expert predictor effectiveness | heuristic; transition 66.8 % (prose) / 56.6 % (code) recall@16, 15 points over frequency; no trainable prerouter |
+| observed bottlenecks | native: CPU-bound page faulting (85 % CPU, device half idle); TierInfer: ~0.75 GB/s for 8.8–12.9 MB reads split at 512 KB stripe chunks, device half idle; the synchronous exact path is the token's I/O wait and concurrency does not help it on this device |
+| correctness issues discovered | sharded GGUF unsupported (blocking); strided-view routing read wrong on b10482; tracker fed per admission; cache misses never counted on the prefetch path; reload cost fed with queueing noise; wait timeout outside the guard; blocking drop; stranded loads on close; unbounded size list; ignored fadvise failures; `if vram:` falsy when empty; policy simulator's seconds in the observed schema; text-matching safety audit; expert size assumed uniform |
+| correctness issues repaired | all of the above (`8d33288`, `897cd37`, `08f18d6`, `d71d993`, and the replay commits); 18 000+ deliveries verified byte for byte across the failure arms, 0 mismatches |
+| remaining scope gaps | the llama.cpp loader (goal 6, and with it goals 7/9/10 as runtime mechanisms and completion items 9, 11, 14, 17, 18); trainable prerouter (8); prefetch priority classes and coalescing (7.7); backend device characteristics beyond the concurrency probe (7.8); FlowRunner consumer (12); NVMe tier under FreeToken (11); stripe-aligned reads on md (found here) |
+
+A negative result stated as one: on this model and this storage, TierInfer's
+explicit RAM tier reads far less and far larger than Linux demand paging with
+less memory, its prediction and prefetch add nothing measurable, its VRAM
+tier catches a fifth of the traffic, and none of it is under a running model
+yet.

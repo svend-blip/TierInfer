@@ -322,3 +322,62 @@ inferred from bytes read.
   `unmappable` missing from the summary.
 - **Next:** last two chain7 arms, then CP-9 (comparison) and CP-10 (final
   reconciliation).
+
+## CP-9 — native-vs-TierInfer comparison complete
+
+- **Revision:** the commit carrying this entry.
+- **Compared:** same model, same prompt class (prose; code as the second
+  class), same storage, same host state; native = six `llama-server` runs
+  at `-ngl 0` (three cold, three warm) and six across the offload sweep;
+  TierInfer = replayed real routing through the real mechanisms, 150 tokens
+  per arm, cold, page cache evicted after every read, three arms rerun
+  after the corrections in §4.3. Medians, minima and maxima reported; no
+  run selected.
+- **Result** (`VALIDATION-480B.md` §4, §8): per generated token native reads
+  1.82 GB in 74 098 requests of 24 KB (md merges to 131 KB); TierInfer reads
+  1.30 GB in 3 771 requests at 100 GiB and **0.63 GB in 1 815 at 150 GiB**,
+  361 KB each. RAM cache 86.8 % / 91.7 %. Prefetch within 1 % of cache-only.
+  VRAM tier 22.1 % hit. Tokens per second of TierInfer: not measurable
+  without a loader — stated, not estimated.
+- **md merging accounted for (§15):** logical requests, TierInfer's issued
+  I/O (9.5 MB per operation), md0's requests and the members' requests are
+  all in the tables; the fivefold merge on the native path is md's.
+- **Next:** CP-10.
+
+## CP-10 — final reconciliation
+
+- **Revision:** the commit carrying this entry (HEAD of `main`).
+- **Repository vs durable state:** `SCOPE.md` goals 2, 4, 5, 6, 7, 8, 10, 11,
+  12, 14 carry the audit's and the validation's words; `README.md`,
+  `docs/architecture.md`, `benchmarks/README.md` agree with them;
+  `docs/AUDIT-2026-09-18.md` is the audit, `benchmarks/480b/VALIDATION-480B.md`
+  the deliverable, `benchmarks/480b/raw/` and `benchmarks/replay-out/480b/`
+  the evidence. `pytest`: 338 passed. `tools/smoketest.py`: 14 passed on
+  this host with the card free.
+- **Addendum §24, item by item:** 1 audit — done (CP-1). 2 identified — done
+  (audit table, 17 rows). 3 blocking defects repaired — done (shards;
+  CP-2) plus the ones the runs found (CP-7, CP-8). 4 goal status reconciled
+  — done (SCOPE.md; goals 6 and 10 un-marked). 5 shards validated — done
+  (CP-3). 6 runtime loads it — done, no change needed (CP-3). 7 native
+  baseline — done, six runs (CP-4). 8 offload configuration — done,
+  `-ncmoe 60` (CP-5). 9 exercised under real pressure — done: 270 GiB model
+  against 183 GB RAM and a 100/150 GiB tier under a cgroup, 23 GB VRAM tier.
+  10 TierInfer movement distinguishable from mmap — done: page cache evicted
+  after every read, md0/sda/sdb counted, requests of 361 KB against 24 KB.
+  11 RAM cache from real accesses — done. 12 VRAM working set from real
+  accesses — done (real `cudaMemcpy`, 22.1 %). 13 expert activity from real
+  execution — done (two traces, `cb_eval`). 14 prefetch measured — done,
+  negative. 15 predictor verified real/connected/measurable — done for the
+  heuristic predictors, which are connected to the prefetcher; **no
+  prerouter exists**, recorded. 16 repeated controlled comparison — done
+  (n=3 native cold/warm; three replay reruns; medians/min/max). 17 md merging
+  accounted for — done. 18 failure behaviour — done, six injections, 17 856
+  verified deliveries. 19 recorded durably — this file, the validation, the
+  raw directories, `git log`. 20 repository, tests, scope state and status
+  agree — yes, as of this commit.
+- **What remains open, in the scope's terms:** the llama.cpp loader (goal 6)
+  and everything that becomes measurable only with it; the trainable
+  prerouter (goal 8); prefetch priority classes and coalescing; device
+  characteristics in the backend beyond the concurrency probe; the
+  FlowRunner consumer; the NVMe tier under FreeToken; stripe-aligned reads
+  on md (new, from this validation).

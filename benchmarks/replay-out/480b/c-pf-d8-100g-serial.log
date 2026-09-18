@@ -4,3 +4,16 @@ replay c-pf-d8-100g-serial: 150 tokens, 62 MoE layers, 8x62 = 496 experts/token 
   token    1     7931 ms  wait   7491  stalls 186 late   0 useful   3  cache 307/496  dev  5.94 GB  16962 reads @  367 KB
   token    2     6169 ms  wait   5812  stalls 141 late   0 useful  11  cache 344/496  dev  4.57 GB  13066 reads @  367 KB
   token   24     1875 ms  wait   1735  stalls  47 late   0 useful   0  cache 449/496  dev  1.25 GB   3610 reads @  363 KB
+  token   49     1224 ms  wait   1107  stalls  31 late   0 useful   0  cache 465/496  dev  0.82 GB   2382 reads @  359 KB
+  token   74     1083 ms  wait    972  stalls  26 late   1 useful   0  cache 469/496  dev  0.77 GB   2253 reads @  356 KB
+  token   99     5212 ms  wait   4747  stalls 170 late   0 useful   2  cache 324/496  dev  4.65 GB  13507 reads @  361 KB
+  token  124     3014 ms  wait   2702  stalls  96 late   2 useful   2  cache 396/496  dev  2.66 GB   7811 reads @  358 KB
+  token  149      803 ms  wait    672  stalls  25 late   0 useful   0  cache 471/496  dev  0.72 GB   2175 reads @  349 KB
+
+c-pf-d8-100g-serial: 150 tokens in 355 s, median 1731 ms/token (min 330, max 20371)
+  cache hit rate 86.8% (64566/74400), 6067 evictions, 3767 resident at end
+  prefetch issued 809, useful 253, late 32, wasted 524 (14.2 GB), stalls 9549, accuracy 35.2%, pool exhausted 111, timed out 0
+  stream 22.0 GB at 0.69 GB/s, 0 failed reads, storage ops 28647
+  md0: 264.4 GB in 766052 reads @ 362 KB, await 1.65 ms, 0.75 GB/s; sda: 132.2 GB in 342968 @ 404 KB; sdb: 132.2 GB in 343354 @ 404 KB
+  per token: median 1.30 GB from md0 in 3762 reads
+  verified 0 deliveries against exact reads, 0 mismatches; residency 0.0% -> 0.2%

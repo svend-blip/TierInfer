@@ -146,7 +146,20 @@ FreeToken. The advisory route was tried first and measured to do nothing
 `posix_fadvise` is told.
 
 `SCOPE.md` carries the full plan, its order, and what each goal has measured
-so far; `docs/SCOPE-ADDENDUM-480B.md` is the current work.
+so far.
+
+## The 480B validation (2026-09-18)
+
+`docs/SCOPE-ADDENDUM-480B.md` put the components under Qwen3-Coder-480B-A35B
+Q4_K_M — six shards, 270 GiB, on a USB RAID0 — with `docs/AUDIT-2026-09-18.md`
+first and `benchmarks/480b/VALIDATION-480B.md` as the result. In one line
+each: native llama.cpp generates at 0.24 t/s CPU-bound on page faults with
+the device half idle; TierInfer's RAM tier under the same routing reads
+**36–65 % fewer bytes in 20–40× fewer operations with less RAM**; prefetch
+and prediction add nothing measurable; the VRAM tier catches a fifth of the
+traffic; 18 000 delivered experts under injected failures matched the file
+byte for byte; and none of it runs under a model yet, because the loader is
+still the missing piece.
 
 ## Why this is worth doing
 

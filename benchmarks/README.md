@@ -13,6 +13,9 @@ came out, with the command that produced it. None of the numbers is a plan.
 | `residency.py` → `residency-report.json` | can a helper pin the floor / advise the page cache? | reading helps 12.5 %; advice does nothing |
 | `vram.py` → `VRAM.md` | what fits on the card, and at what transfer rate? | 22–25 GB of experts at 76–79 % hit rate; pinned 27.6 GB/s |
 | `policy.py` → `POLICY.md` | a **cost simulation** of one policy over three tiers | tiering 17×, the dial 1 % — modelled, not run |
+| `routing_report.py` → `480b/routing-*.json` | what a captured trace says about a model, and recall@k of every predictor | 480B: 20.9 GB per token, 173–221 GB per 128 tokens, transition 57–67 % recall@16 |
+| `replay.py` → `replay-out/`, `480b/VALIDATION-480B.md` | real routing through the real mechanisms against the real files, no compute; failure injection on the same path | 480B: 36–65 % fewer bytes in 20–40× fewer reads than native; prefetch ±0; 0 mismatches |
+| `480b/analyze_replay.py` | one table row per replay arm | |
 
 The `inloop.py` in-loop advisory experiment and the trace tool's assist mode
 were removed on 2026-09-18 after the audit: the measurement that falsified

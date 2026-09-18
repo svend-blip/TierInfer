@@ -25,3 +25,6 @@ b-pf-d8-100g rc=0
 c-cache-d0-100g-serial rc=0
 c-cache-d0-100g-batched rc=0
 c-cache-d0-150g-serial rc=0
+c-pf-d8-100g-serial rc=0
+c-cache-d0-100g-code-serial rc=0
+chain7-done
