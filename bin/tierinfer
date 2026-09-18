@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# The `tierinfer` command without an install: runs the CLI from this checkout.
+set -euo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+export PYTHONPATH="$HERE/src${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m tierinfer.cli "$@"
