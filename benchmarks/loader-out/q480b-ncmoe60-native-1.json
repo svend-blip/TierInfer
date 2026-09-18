@@ -1,0 +1,62 @@
+{
+ "label": "q480b-ncmoe60-native-1",
+ "cmd": [
+  "/home/svend/llama.cpp-qwen38/build/bin/llama-server",
+  "--port",
+  "8931",
+  "--host",
+  "127.0.0.1",
+  "-m",
+  "/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf",
+  "-c",
+  "4096",
+  "-t",
+  "32",
+  "--no-warmup",
+  "-ngl",
+  "99",
+  "-ncmoe",
+  "60",
+  "-fa",
+  "on"
+ ],
+ "load_s": 193.20584654808044,
+ "prompt_n": 111,
+ "prompt_s": 143.430567,
+ "prompt_tps": 0.7738936150200116,
+ "gen_n": 32,
+ "gen_s": 70.927268,
+ "gen_tps": 0.4370674477409732,
+ "ttft_s": 143.430567,
+ "wall_s": 214.4259226322174,
+ "content": "Designing an expert cache for a sparse mixture-of-experts (MoE) model with weights stored on NVMe RAID involves several critical components: cache policy,",
+ "io_load": {
+  "reads": 2269406,
+  "bytes": 313051971584
+ },
+ "io_infer": {
+  "reads": 2440559,
+  "bytes": 266337640448,
+  "mean_read_bytes": 109129.76922418184,
+  "await_ms": 4.901575827505092,
+  "members": {
+   "sda": {
+    "reads": 894306,
+    "bytes": 289902845952,
+    "mean_read_bytes": 324165.1581807569
+   },
+   "sdb": {
+    "reads": 884571,
+    "bytes": 289486766080,
+    "mean_read_bytes": 327262.32951340254
+   }
+  }
+ },
+ "server": {
+  "VmHWM": 153675079680,
+  "VmRSS": 146003820544,
+  "majflt": 125879
+ },
+ "arm": "native",
+ "rep": 1
+}

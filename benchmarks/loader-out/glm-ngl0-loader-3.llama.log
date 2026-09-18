@@ -1,0 +1,45 @@
+tierinfer-mmap: cannot reach the server at /tmp/tierinfer-439486.sock — standing aside (native mmap)
+0.00.126.185 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.217.503 W srv  llama_server: -----------------
+0.00.217.506 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.217.506 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.217.507 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.217.507 W srv  llama_server: -----------------
+0.00.218.768 I srv    load_model: loading model '/home/svend/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf'
+0.00.596.108 W load: special_eot_id is not in special_eog_ids - the tokenizer config may be incorrect
+0.00.596.119 W load: special_eom_id is not in special_eog_ids - the tokenizer config may be incorrect
+0.00.624.980 W model has unused tensor blk.46.attn_norm.weight (size = 16384 bytes) -- ignoring
+0.00.624.987 W model has unused tensor blk.46.attn_q.weight (size = 26738688 bytes) -- ignoring
+0.00.624.989 W model has unused tensor blk.46.attn_k.weight (size = 2228224 bytes) -- ignoring
+0.00.624.991 W model has unused tensor blk.46.attn_v.weight (size = 2883584 bytes) -- ignoring
+0.00.624.993 W model has unused tensor blk.46.attn_q.bias (size = 49152 bytes) -- ignoring
+0.00.624.994 W model has unused tensor blk.46.attn_k.bias (size = 4096 bytes) -- ignoring
+0.00.624.996 W model has unused tensor blk.46.attn_v.bias (size = 4096 bytes) -- ignoring
+0.00.624.998 W model has unused tensor blk.46.attn_output.weight (size = 26738688 bytes) -- ignoring
+0.00.625.003 W model has unused tensor blk.46.post_attention_norm.weight (size = 16384 bytes) -- ignoring
+0.00.625.005 W model has unused tensor blk.46.ffn_gate_inp.weight (size = 2097152 bytes) -- ignoring
+0.00.625.007 W model has unused tensor blk.46.exp_probs_b.bias (size = 512 bytes) -- ignoring
+0.00.625.009 W model has unused tensor blk.46.ffn_gate_exps.weight (size = 392167424 bytes) -- ignoring
+0.00.625.010 W model has unused tensor blk.46.ffn_down_exps.weight (size = 415236096 bytes) -- ignoring
+0.00.625.012 W model has unused tensor blk.46.ffn_up_exps.weight (size = 392167424 bytes) -- ignoring
+0.00.625.014 W model has unused tensor blk.46.ffn_gate_shexp.weight (size = 3063808 bytes) -- ignoring
+0.00.625.016 W model has unused tensor blk.46.ffn_down_shexp.weight (size = 3244032 bytes) -- ignoring
+0.00.625.018 W model has unused tensor blk.46.ffn_up_shexp.weight (size = 3063808 bytes) -- ignoring
+0.00.625.021 W model has unused tensor blk.46.nextn.eh_proj.weight (size = 17825792 bytes) -- ignoring
+0.00.625.023 W model has unused tensor blk.46.nextn.enorm.weight (size = 16384 bytes) -- ignoring
+0.00.625.025 W model has unused tensor blk.46.nextn.hnorm.weight (size = 16384 bytes) -- ignoring
+0.00.625.027 W model has unused tensor blk.46.nextn.embed_tokens.weight (size = 329777152 bytes) -- ignoring
+0.00.625.029 W model has unused tensor blk.46.nextn.shared_head_head.weight (size = 329777152 bytes) -- ignoring
+0.00.625.031 W model has unused tensor blk.46.nextn.shared_head_norm.weight (size = 16384 bytes) -- ignoring
+0.21.853.109 I cmn          init: llama threadpool init, n_threads = 32
+0.22.294.119 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.22.300.924 I srv  llama_server: model loaded
+0.22.300.931 I srv  llama_server: listening on http://127.0.0.1:8931
+0.22.964.511 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+0.22.964.591 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+0.38.837.681 I slot print_timing: id  3 | task 0 | prompt eval time =    3507.85 ms /   111 tokens (   31.60 ms per token,    31.64 tokens per second)
+0.38.837.689 I slot print_timing: id  3 | task 0 |        eval time =   12365.18 ms /    32 tokens (  398.88 ms per token,     2.51 tokens per second)
+0.38.837.690 I slot print_timing: id  3 | task 0 |       total time =   15873.03 ms /   143 tokens
+0.38.837.696 I slot print_timing: id  3 | task 0 |    graphs reused =         30
+0.38.838.108 I slot      release: id  3 | task 0 | stop processing: n_tokens = 142, truncated = 0
+0.38.839.612 I srv    operator(): operator(): cleaning up before exit...

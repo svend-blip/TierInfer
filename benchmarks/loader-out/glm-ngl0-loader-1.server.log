@@ -1,0 +1,12 @@
+tierinfer: start the runtime with
+  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK=/tmp/tierinfer-439486.sock TIERINFER_FILES=/home/svend/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf
+tierinfer-loader: listening on /tmp/tierinfer-439486.sock; RAM tier 27.0 GB (2773 experts), 8 fault workers, prefetch depth 0
+tierinfer-loader: pid 442360: eviction channel open
+tierinfer-loader: pid 442360: control channel open
+tierinfer-loader: pid 442360: serving GLM-4.5-Air-Derestricted.IQ4_XS.gguf (56.47 GB at 0x76d4b81db000), 18329 regions
+tierinfer-loader: token 1: hit 0.0% (0/360) faults 20384 copied 9.0 GB evicted 0 prefetch 0/0/0/0 resident 734 (9.0 GB)
+tierinfer-loader: token 2: hit 3.3% (167/5134) faults 25254 copied 50.1 GB evicted 2590 prefetch 0/0/1/0 resident 2797 (27.0 GB)
+tierinfer-loader: token 3: hit 6.0% (328/5494) faults 31740 copied 51.9 GB evicted 2790 prefetch 0/0/4/0 resident 2794 (27.0 GB)
+tierinfer-loader: stats LoaderStats(faults=62794, faults_expert=54477, faults_floor=8317, faults_duplicate=3055, faults_resident=53075, faults_repaired=0, bytes_copied=63840231424, copy_seconds=11.35284378606957, read_seconds=77.9643135740007, routed=7886, hits=1847, misses=6039, prefetch_issued=0, prefetch_useful=0, prefetch_late=14, prefetch_wasted=0, evictions=3655, evict_bytes=34731831296, tokens=9, read_retries=0, copy_eagain=0, wakes=62792, unmapped_pages=3030, repeat_faults=0) resident 2778 (27.0 GB) serving 1
+tierinfer-loader: token 20: hit 40.0% (4648/11614) faults 99279 copied 67.5 GB evicted 4568 prefetch 0/0/30/0 resident 2767 (27.0 GB)
+tierinfer-loader: pid 442360: control channel closed

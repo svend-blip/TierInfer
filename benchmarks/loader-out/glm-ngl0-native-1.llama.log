@@ -36,3 +36,9 @@
 0.29.682.091 I srv  llama_server: listening on http://127.0.0.1:8931
 0.29.966.088 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
 0.29.966.123 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+2.35.508.930 I slot print_timing: id  3 | task 0 | prompt eval time =   25696.56 ms /   111 tokens (  231.50 ms per token,     4.32 tokens per second)
+2.35.508.937 I slot print_timing: id  3 | task 0 |        eval time =   99846.21 ms /    32 tokens ( 3220.85 ms per token,     0.31 tokens per second)
+2.35.508.937 I slot print_timing: id  3 | task 0 |       total time =  125542.76 ms /   143 tokens
+2.35.508.943 I slot print_timing: id  3 | task 0 |    graphs reused =         30
+2.35.509.382 I slot      release: id  3 | task 0 | stop processing: n_tokens = 142, truncated = 0
+2.35.510.537 I srv    operator(): operator(): cleaning up before exit...

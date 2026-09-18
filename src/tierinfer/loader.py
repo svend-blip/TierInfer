@@ -301,9 +301,31 @@ class Mapping:
     pagemap_fd: int = -1          # /proc/<pid>/pagemap, when readable
     dead: bool = False
     logical_off: int | None = None    # set when the mapping is a slice of an FTW region, not a file
+    holes: list[tuple[int, int]] = field(default_factory=list)   # [a, b) offsets the client has unmapped
+    gone: set = field(default_factory=set)                        # keys whose every byte lies in a hole
 
     def contains(self, addr: int) -> bool:
         return self.base <= addr < self.base + self.length
+
+    def in_hole(self, a: int, b: int) -> bool:
+        """Does [a, b) touch memory the client has unmapped?"""
+        return any(a < hb and b > ha for ha, hb in self.holes)
+
+    def live_pieces(self, a: int, b: int) -> list[tuple[int, int]]:
+        """[a, b) minus the holes, in order."""
+        pieces = [(a, b)]
+        for ha, hb in self.holes:
+            nxt = []
+            for x, y in pieces:
+                if y <= ha or x >= hb:
+                    nxt.append((x, y))
+                else:
+                    if x < ha:
+                        nxt.append((x, ha))
+                    if y > hb:
+                        nxt.append((hb, y))
+            pieces = nxt
+        return pieces
 
     def open_pagemap(self) -> None:
         try:
@@ -483,6 +505,9 @@ class LoaderStats:
     coalesced_reads: int = 0            # one read that covered a run of consecutive experts
     coalesced_experts: int = 0          # experts served through such reads
     repeat_faults: int = 0
+    unmaps: int = 0                     # UNMAP messages from clients
+    unmapped_bytes: int = 0
+    forgotten: int = 0                  # resident experts whose bytes the client unmapped
 
     @property
     def hit_rate(self) -> float:
@@ -594,6 +619,9 @@ class LoaderServer:
             conn.close()
             return
         kind, pid = parts[1], int(parts[2])
+        if kind == "probe":
+            conn.close()                        # a liveness check from a harness
+            return
         if kind == "evict":
             with self._lock:
                 self._evict_conns[pid] = conn
@@ -610,6 +638,8 @@ class LoaderServer:
                     self._on_map(conn, pid, line, fds)
                 elif line.startswith("ROUTE "):
                     self._on_route(line)
+                elif line.startswith("UNMAP "):
+                    self._on_unmap(pid, line)
         finally:
             self._say(f"pid {pid}: control channel closed")
             f.close()
@@ -883,6 +913,12 @@ class LoaderServer:
         faulted on the same page five million times. Now the copy bisects to
         the mapped prefix and copies that.
         """
+        if m.holes and m.in_hole(a, b):
+            # a known hole: copy around it rather than discovering it by ENOENT
+            skipped = 0
+            for x, y in m.live_pieces(a, b):
+                skipped += self._copy_pages(m, x, y, source)
+            return skipped
         data = source(a, b)
         # The bytes object's own buffer is the copy source: no second memcpy
         # of a 9 MB slab in Python. ``data`` stays referenced until the loop
@@ -954,7 +990,7 @@ class LoaderServer:
             self.stats.prefetch_wasted += 1
         for m in self.mappings:
             regions = m.layout.by_key.get(key)
-            if not regions:
+            if not regions or m.dead:
                 continue
             conn = self._evict_conns.get(m.pid)
             if conn is None:
@@ -962,13 +998,67 @@ class LoaderServer:
             for r in regions:
                 a = (r.start + PAGE - 1) & ~(PAGE - 1)      # interior pages only: the edge
                 b = r.end & ~(PAGE - 1)                      # pages are shared with a neighbour
-                if b > a:
+                for x, y in m.live_pieces(a, b) if m.holes else [(a, b)]:
+                    if y <= x:
+                        continue
                     try:
-                        conn.sendall(f"EVICT {m.base + a:x} {b - a}\n".encode())
-                        self.stats.evict_bytes += b - a
+                        conn.sendall(f"EVICT {m.base + x:x} {y - x}\n".encode())
+                        self.stats.evict_bytes += y - x
                     except OSError as e:
                         self._say(f"eviction channel to pid {m.pid} lost: {e}")
             break
+
+    # -- the client unmapped part of a served region ---------------------------
+
+    def _on_unmap(self, pid: int, line: str) -> None:
+        # UNMAP <addr> <len>: llama.cpp dropped a fragment (prefix before the
+        # first CPU tensor, suffix after the last). Whatever lived there is
+        # gone from the client, must never be evicted into (the addresses can
+        # be anyone's now) and cannot fault again.
+        _, addr_s, len_s = line.split()
+        addr, n = int(addr_s, 16), int(len_s)
+        m = next((x for x in self.mappings if x.pid == pid and x.contains(addr)), None)
+        if m is None:
+            self._say(f"pid {pid}: UNMAP {addr:#x}+{n} is not inside a mapping I serve")
+            return
+        a = addr - m.base
+        b = min(a + n, (m.length + PAGE - 1) & ~(PAGE - 1))   # the region is page-granular; the file is not
+        if a == 0 and b >= m.length:
+            # the whole region: the client is tearing down (Python's mmap
+            # object, llama_free_model). Nothing to forget one by one; the
+            # mapping is retired and nothing is evicted into it again.
+            with self._lock:
+                m.holes.append((a, b))
+                m.dead = True
+                self.stats.unmaps += 1
+                self.stats.unmapped_bytes += b - a
+            self._say(f"pid {pid}: unmapped all of {m.path.name}; mapping retired")
+            return
+        forgotten = 0
+        with self._lock:
+            m.holes.append((a, b))
+            self.stats.unmaps += 1
+            self.stats.unmapped_bytes += b - a
+            lo = max(0, bisect.bisect_right(m.layout._starts, a) - 1)   # the region a falls in, too
+            seen = set()
+            for r in m.layout.regions[lo:]:
+                if r.start >= b:
+                    break
+                key = r.key
+                if key in seen or key[0] == "floor":
+                    continue
+                seen.add(key)
+                # gone when any of its slabs lost an interior page: it cannot be
+                # served whole again, and its bytes must not be evicted into
+                if any(m.in_hole((x.start + PAGE - 1) & ~(PAGE - 1), x.end & ~(PAGE - 1))
+                       for x in m.layout.by_key[key]):
+                    m.gone.add(key)
+                    if self.cache.forget(key):
+                        forgotten += 1
+                        self._prefetched.discard(key)
+            self.stats.forgotten += forgotten
+        self._say(f"pid {pid}: unmapped [{a}, {b}) of {m.path.name} ({(b - a) / GB:.2f} GB); "
+                  f"{len(m.gone)} experts gone, {forgotten} of them were resident")
 
     # -- routing in -----------------------------------------------------------
 
@@ -1048,6 +1138,7 @@ class LoaderServer:
         m = next((x for x in self.mappings if keys[0] in x.layout.by_key), None)
         if m is None:
             return
+        keys = [k for k in keys if k not in m.gone]      # never into memory the client unmapped
         # split into runs of consecutive expert ids
         runs: list[list] = []
         for k in keys:
@@ -1137,7 +1228,9 @@ class LoaderServer:
                  "faults_repaired", "bytes_copied",
                  "copy_seconds", "read_seconds", "routed", "hits", "misses", "prefetch_issued",
                  "prefetch_useful", "prefetch_late", "prefetch_wasted", "evictions", "evict_bytes",
-                 "tokens", "read_retries", "coalesced_reads", "coalesced_experts")} | {
+                 "tokens", "read_retries", "coalesced_reads", "coalesced_experts",
+                 "unmaps", "unmapped_bytes", "forgotten", "unmapped_pages",
+                 "repeat_faults", "copy_eagain")} | {
             "loader.prefetch_enqueued": self.scheduler.enqueued, "loader.prefetch_served": self.scheduler.served,
             "loader.prefetch_superseded": self.scheduler.superseded,
             "loader.prefetch_dropped_full": self.scheduler.dropped_full,

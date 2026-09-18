@@ -1,0 +1,3 @@
+tierinfer: start the runtime with
+  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK=/tmp/tierinfer-439486.sock TIERINFER_FILES=/home/svend/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf
+tierinfer-loader: listening on /tmp/tierinfer-439486.sock; RAM tier 27.0 GB (2773 experts), 8 fault workers, prefetch depth 0
