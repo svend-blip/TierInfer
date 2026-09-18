@@ -380,3 +380,51 @@ def test_the_cache_counts_the_misses_the_prefetcher_serves_around_it(modelfile):
         p.on_routing(0, [0, 1])         # now both resident
         assert p.cache.stats.hits == 2 and p.cache.stats.misses == 3
         assert p.cache.stats.hit_rate == pytest.approx(0.4)
+
+
+def test_a_layers_misses_are_read_together_and_exactly(modelfile):
+    """Routed experts nobody prefetched go through the streamer as a batch:
+    still a stall each, still the index's bytes, no longer one pread at a time."""
+    b, s, t, p = _rig(modelfile, _Fixed([]), depth=0, slots=8)
+    raw = modelfile.read_bytes()
+    with b, s:
+        out = p.on_routing(1, [0, 1, 2, 3])
+        for e in range(4):
+            off = (1 * EXPERTS + e) * EXPERT
+            assert out[(1, e)] == raw[off:off + EXPERT]
+        assert p.stats.stalls == 4
+        assert p.stats.demand_batched == 4
+        assert p.stats.exact_fallbacks == 0
+        assert s.stats.submitted == 4 and s.stats.completed == 4
+        assert s.pool.in_use == 0
+        assert all((1, e) in p.cache for e in range(4))
+
+
+def test_demand_reads_fall_back_to_load_now_when_the_pool_is_full(modelfile):
+    b = StorageBackend(modelfile)
+    s = ExpertStreamer(b, BufferPool(EXPERT, 2), workers=1)
+    p = Prefetcher(s, ExpertCache(64 * EXPERT), _Fixed([]), ranges_for, depth=0)
+    raw = modelfile.read_bytes()
+    with b, s:
+        out = p.on_routing(0, [0, 1, 2, 3, 4])
+        for e in range(5):
+            assert out[(0, e)] == raw[e * EXPERT:(e + 1) * EXPERT]
+        assert p.stats.stalls == 5
+        assert p.stats.demand_batched + p.stats.exact_fallbacks == 5
+        assert p.stats.pool_exhausted >= 1 and p.stats.exact_fallbacks >= 1
+
+
+def test_a_failing_demand_read_still_delivers_the_files_bytes(modelfile):
+    class Bad(StorageBackend):
+        def fd_for(self, r):
+            if threading.current_thread().name.startswith("tierinfer-stream"):
+                raise OSError(5, "injected")
+            return super().fd_for(r)
+    b = Bad(modelfile)
+    s = ExpertStreamer(b, BufferPool(EXPERT, 8), workers=2)
+    p = Prefetcher(s, ExpertCache(64 * EXPERT), _Fixed([]), ranges_for, depth=0)
+    with b, s:
+        out = p.on_routing(0, [0, 1])
+        assert out[(0, 0)] == modelfile.read_bytes()[:EXPERT]
+        assert p.stats.exact_fallbacks == 2 and s.stats.failed == 2
+        assert s.pool.in_use == 0

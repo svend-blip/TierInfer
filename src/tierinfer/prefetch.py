@@ -68,6 +68,9 @@ class PrefetchStats:
     late_wait_seconds: float = 0.0
     timed_out: int = 0
     unmappable: int = 0
+    #: Routed misses read through the streamer concurrently with the rest of
+    #: their layer's misses — still exact, still counted as stalls.
+    demand_batched: int = 0
 
     @property
     def useful(self) -> int:
@@ -178,6 +181,8 @@ class Prefetcher:
         """
         out: dict[ExpertKey, bytes | None] = {}
         now = time.perf_counter()
+        flights: list[tuple[ExpertKey, _InFlight]] = []
+        demand: list[tuple[ExpertKey, Load]] = []
         for expert in experts:
             key = (layer, expert)
             self._routed.add(key)
@@ -193,11 +198,43 @@ class Prefetcher:
             self.cache.stats.misses += 1
             flight = self._inflight.pop(key, None)
             if flight is not None:
-                out[key] = self._collect(key, flight, now)
+                flights.append((key, flight))
                 continue
-            # Nobody saw this coming. Read it exactly, consulting nothing.
-            out[key] = self._exact(key)
+            # Nobody saw this coming: a stall, counted as one. The read is
+            # still exact — these are *routed* experts, and the ranges come
+            # from the index, not from a guess — but a layer's misses are all
+            # known at this moment, so they go through the streamer together
+            # rather than one synchronous pread after another. The 480B
+            # replay measured the difference this makes: 61 misses a token
+            # at 22 ms each, serialised, was two thirds of the token.
+            self.stats.stalls += 1
+            ranges = list(self.ranges_for(key))     # raising here propagates: routed, not speculative
+            try:
+                demand.append((key, self.streamer.submit(key, ranges)))
+                self.stats.demand_batched += 1
+            except PoolExhausted:
+                self.stats.pool_exhausted += 1
+                out[key] = self._exact_read(key)    # no slot: the plain synchronous path
+        for key, flight in flights:
+            out[key] = self._collect(key, flight, now)
+        for key, load in demand:
+            out[key] = self._take(key, load)
         return out
+
+    def _take(self, key: ExpertKey, load: Load) -> bytes:
+        """Deliver a demand read issued through the streamer, or fall back exactly."""
+        try:
+            view = self.streamer.wait(load, timeout=self.wait_timeout)
+        except TimeoutError:
+            self.stats.timed_out += 1
+            self._orphans.append(load)
+            return self._exact_read(key)
+        except StreamError:
+            return self._exact_read(key)
+        data = bytes(view)
+        self._admit(key, data, load.read_seconds)
+        self.streamer.release(load)
+        return data
 
     def _collect(self, key: ExpertKey, flight: _InFlight, now: float) -> bytes | None:
         """Take delivery of a prefetch that was right.
@@ -237,6 +274,10 @@ class Prefetcher:
     def _exact(self, key: ExpertKey) -> bytes:
         """The path that consults nothing, counted as the stall it is."""
         self.stats.stalls += 1
+        return self._exact_read(key)
+
+    def _exact_read(self, key: ExpertKey) -> bytes:
+        """``load_now`` on the index's ranges: the bottom of the stack (goal 15)."""
         self.stats.exact_fallbacks += 1
         t0 = time.perf_counter()
         data = self.streamer.load_now(list(self.ranges_for(key)))
