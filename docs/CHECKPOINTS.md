@@ -285,3 +285,40 @@ inferred from bytes read.
 - **Next:** `chain6` — the same measurement arms with a layer's demand
   misses read concurrently (`d55e20e`), then CP-9 and the final
   reconciliation.
+
+## CP-6b — TierInfer large-model run operational
+
+- **Revision:** the commit carrying this entry.
+- **What ran:** `benchmarks/replay.py` over the six shards on md0 with the
+  captured 480B routing: `ExpertStreamer` (8 workers) + `ExpertCache`
+  (100 / 150 GiB of real bytes) + `Prefetcher` (depth 0 / 8 / 16) +
+  `VramResidency` (792 slots, real `cudaMemcpy`), page cache evicted after
+  every read so TierInfer's cache is the RAM tier; telemetry JSONL per arm
+  (`benchmarks/replay-out/480b/*.telemetry.jsonl`), md0/sda/sdb counters
+  around and during. Eleven measurement arms of 150 tokens plus reruns.
+- **Result:** table and reading in `VALIDATION-480B.md` §4.1–4.3.
+- **What "operational" means here and does not:** the mechanisms move real
+  bytes under real routing and every counter is observed; no model computes
+  on them (no loader — audit item 12).
+
+## CP-7 — expert, cache and prefetch telemetry validated
+
+- **Revision:** the commit carrying this entry.
+- **Expert telemetry:** identities from the router (`cb_eval`), ranges from
+  the index per shard, activation and hot/cold from the trace report
+  (CP-6a). **Cache:** hits, misses, evictions, bytes from the cache's own
+  counters — after fixing the one that lied (misses were never counted on the
+  prefetcher's path, `897cd37`) and the one that was fed noise (reload cost,
+  `08f18d6`). **Prefetch:** issued / useful / late / wasted / stalls, with
+  `late` split from `useful` by whether the load had finished before the
+  routing asked (addendum §12's "useful prefetch means arrived before demand
+  and consumed"). **VRAM:** hits, transfers, bytes, GB/s from
+  `VramResidency`. **Device:** `/proc/diskstats` md0 + members, so
+  TierInfer's requests, md's merged requests and the drives' physical
+  requests are in one table (§15).
+- **Three telemetry defects found by running it, all fixed:** a 100 % cache
+  hit rate over a run that read everything from disk; a VRAM tier whose
+  counters vanished because `if vram:` was false on an empty residency;
+  `unmappable` missing from the summary.
+- **Next:** last two chain7 arms, then CP-9 (comparison) and CP-10 (final
+  reconciliation).

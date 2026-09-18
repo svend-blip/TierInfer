@@ -245,10 +245,54 @@ the same arm with `--drop-after-read` saw 1.62 GB, the streamer reports
 the page cache at the end. A deployment that does not evict what it has
 copied pays twice for RAM and measures nothing about its own cache.
 
-### 4.3 After batching the demand reads
+### 4.3 Batching the demand reads — measured, and switched off for this device
 
-_(chain6 running: the cache-only and prefetch arms again with a layer's
-misses read through the streamer concurrently; numbers land here.)_
+The lever named above was applied (`d55e20e`: a layer's routed misses go
+through the streamer together) and the cache-only arm rerun. It came back
+**slower**: 2 379 ms against 1 576, hit rate 84.1 % against 87.6 %, 1.87 GB
+per token against 1.17. Two effects were tangled in that, and two more arms
+separated them:
+
+| arm (cache only, 100 GiB, prose) | ms/token | I/O wait | RAM hit | md0 GB/token | md0 await | ms per miss |
+|---|--:|--:|--:|--:|--:|--:|
+| original (serial exact reads) | 1 576 | 1 382 | 87.6 % | 1.17 | 1.41 | 22.6 |
+| batched demand + per-load reload cost fed to the cache | 2 379 | 2 112 | 84.1 % | 1.87 | 3.88 | 26.7 |
+| serial, reload cost constant again | 1 713 | 1 559 | 86.8 % | 1.30 | 1.41 | 23.8 |
+| batched, reload cost constant again | 1 839 | 1 636 | 86.8 % | 1.30 | 4.23 | 24.9 |
+
+1. **The hit-rate loss was the cache's, not the batching's.** A repair
+   made earlier the same day (`a1b4018`) had started feeding the cache's
+   reload-cost term with each load's measured read time. Under concurrent
+   reads that time is mostly queueing behind the other loads, so identical
+   experts received costs a factor of ten apart by luck, and the recency-led
+   policy began evicting by that noise: 87.6 → 84.1 %, 0.7 GB more per
+   token. With the term constant again the two arms agree to the decimal
+   (86.8 %, 1.30 GB). A reload cost has to be a property of the expert, not
+   of the moment it was read; the repair is reverted (`08f18d6`) and the
+   reason is in the code.
+2. **Concurrency buys nothing on this device.** Same cache, same bytes:
+   batched is 5 % slower per miss, md0 delivers 0.73–0.74 GB/s either way,
+   and await triples (1.4 → 4.2 ms) because eight 30 MB reads are queueing
+   for a pipe that one of them already fills. On the reference NVMe the
+   same mechanism measured 3.47× (`STREAMING.md`). It is a property of the
+   device — so it is now a switch (`Prefetcher(batch_demand=…)`), and
+   `autoconfig.probe_concurrency` measures it from the model's own files in
+   about a second and decides, threshold named, instead of anyone assuming
+   (`5ceaf53`). The remaining arms ran serial.
+
+What this leaves as the bottleneck: **~0.75 GB/s from md0 for expert-sized
+random reads, at under 50 % utilisation.** The load phase streamed 1.7 GB/s
+sequentially and fio measured 2 GB/s for 1 MiB random reads, so the gap is in
+how 8.8–12.9 MB reads at 32-byte-aligned offsets travel through a 512 KB
+stripe: the mean request md0 sees is 361–376 KB, not 512, which says most
+requests are split at chunk boundaries. Aligning and sizing TierInfer's
+reads to the array's geometry (read whole stripes, pad to the chunk) is the
+next measurable step and was not taken inside this addendum.
+
+The serial 150 GiB cache-only arm is the best measured configuration for
+this model on this host: **1 034 ms of I/O per token, 91.7 % hit, 0.63 GB in
+1 815 reads** — against native's 1.82 GB in 74 098 reads with more RAM.
+Prefetch at 150 GiB (§4.1) changed none of those figures.
 
 ## 5. Predictor on 480B routing
 

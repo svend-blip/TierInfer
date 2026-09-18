@@ -1,0 +1,27 @@
+verify-d8 rc=0
+inj-bad-predictor rc=0
+inj-fail-reads rc=0
+--- chain5b start 2026-09-18T03:29:46Z
+inj2-fail-reads rc=0
+inj2-tiny-pool rc=0
+inj2-tiny-vram rc=0
+inj2-missing-range rc=0
+cache-d0-100g rc=0
+pf-d8-100g rc=0
+pf-d16-100g rc=0
+pf-d8-100g-comp rc=0
+pf-d8-100g-vram rc=0
+pf-d8-150g rc=0
+pf-d8-100g-code rc=0
+pf-d8-100g-pagecache rc=0
+chain5-done
+inj3-missing-range rc=0
+chain5c-done
+inj3-tiny-vram rc=0
+chain5d-done
+b-verify rc=0
+b-cache-d0-100g rc=0
+b-pf-d8-100g rc=0
+c-cache-d0-100g-serial rc=0
+c-cache-d0-100g-batched rc=0
+c-cache-d0-150g-serial rc=0

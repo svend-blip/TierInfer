@@ -3,3 +3,4 @@ replay c-pf-d8-100g-serial: 150 tokens, 62 MoE layers, 8x62 = 496 experts/token 
   token    0    20371 ms  wait  19256  stalls 484 late   0 useful  12  cache   0/496  dev 14.54 GB  41449 reads @  368 KB
   token    1     7931 ms  wait   7491  stalls 186 late   0 useful   3  cache 307/496  dev  5.94 GB  16962 reads @  367 KB
   token    2     6169 ms  wait   5812  stalls 141 late   0 useful  11  cache 344/496  dev  4.57 GB  13066 reads @  367 KB
+  token   24     1875 ms  wait   1735  stalls  47 late   0 useful   0  cache 449/496  dev  1.25 GB   3610 reads @  363 KB
