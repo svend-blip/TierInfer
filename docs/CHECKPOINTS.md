@@ -415,3 +415,64 @@ inferred from bytes read.
   reads, real RAM-tier hits) → VERIFIED; TI-LLAMA-011 → IN_PROGRESS (the
   harness runs with the fix are queued: GLM ×3, then 480B ×3).
 - **Next:** CP-12 with the harness numbers.
+
+## CP-12 — the loader under llama.cpp on the 480B (live A/B, preliminary: run 1 of 3)
+
+- **Revision:** `39ba8ce` (loader `11a9456` + `e00bf01` + `39ba8ce`);
+  harness `82d6a98`. Run 1 of each arm below; runs 2–3 are in flight and
+  will be appended to this checkpoint's table in `VALIDATION-480B.md` §4.4.
+- **What ran:** `benchmarks/loader_ab.py`, llama-server b10482,
+  `-ngl 99 -ncmoe 60 -fa on -c 4096 -t 32 --no-warmup`, the 111-token
+  prompt, 32 greedy tokens, cold page cache before each run (`0.00 %`
+  resident after drop). Loader arm: `LD_PRELOAD=build/libtierinfer_mmap.so`
+  + `tierinfer serve --ram-gb 150 --workers 8 --depth 0`. Native arm: no
+  shim, no ceiling (its page cache is the whole host, ~180 GB).
+- **Incident first — the first attempt died.** `q480b-ncmoe60-loader-1-crash.*`:
+  llama-server ended with `free(): invalid pointer` after 557
+  `madvise(DONTNEED)` failures (ENOMEM). Cause, from the loader's own
+  layout: `-ncmoe 60` puts the experts of layers 60–61 on the GPU;
+  llama.cpp reads them through the mapping at load (served, 320 experts,
+  9.3 GB) and then **unmaps that suffix fragment** of shard 6. The kernel
+  handed those addresses to later allocations. When the prompt batch filled
+  the 150 GB tier, the cache evicted its least valuable entries — exactly
+  those 320 never-routed experts — and `MADV_DONTNEED` landed on llama's
+  own memory. Fixed in `11a9456`: the shim interposes `munmap`, reports
+  `UNMAP <addr> <len>`, and refuses any `EVICT` into a hole regardless;
+  the server forgets what lived there, never prefetches it, and copies and
+  evicts around holes. Two tests reproduce it through the preloaded shim.
+  The rerun's server log confirms the diagnosis to the expert:
+  `unmapped [32794058752, 42780364800) of …-00006-of-00006.gguf (9.30 GB);
+  320 experts gone, 320 of them were resident`.
+- **Result — correctness:** the 32 generated tokens are **identical**
+  between the arms (`q480b-ncmoe60-{native,loader}-1.json`, `content`).
+- **Result — performance, run 1:**
+
+  | arm | load s | prompt t/s | gen t/s | infer GB | infer reads | mean KB | await ms |
+  |---|--:|--:|--:|--:|--:|--:|--:|
+  | native | 193 | 0.774 | 0.437 | 248.1 | 2 440 559 | 107 | 4.9 |
+  | loader (150 GB tier) | 37 | 0.750 | **0.622** | 157.9 | 427 924 | 387 | 2.0 |
+
+  Generation **42 % faster** than native at equal prompt speed, with 36 %
+  fewer bytes and 5.7× fewer read requests from md0, each 3.6× larger.
+  Load is 5× faster because nothing is populated up front.
+- **From the loader's telemetry** (`q480b-ncmoe60-loader-1.telemetry.jsonl`):
+  the prompt batch routed 5 322 distinct experts, 5 100 misses, 150 GB
+  copied in 148 s (1.0 GB/s, storage-bound — the same 0.75–1.0 GB/s ceiling
+  §1 and §4 measured); the tier was full (6 053 entries, 150.0 GB) from
+  then on. Per generated token, median: 464 hits / 32 misses (**93.6 %
+  hit rate**, 87–96 %), 832 faults, 454 MB copied, 16 evictions, 1.45 s
+  wall. Whole run: 59 212 faults, of which 47 502 were for pages already
+  present (32 compute threads touching one expert: woken via
+  `/proc/<pid>/pagemap`, not re-copied), 387 repaired; 0 repeat faults,
+  0 EAGAIN, 0 read retries; 28 UNMAP messages, 5 851 experts forgotten
+  (teardown included).
+- **Acceptance IDs moved (pending runs 2–3):** TI-LLAMA-011 → VERIFIED on
+  run 1 (loader ≥ native, tokens identical); TI-480B-009/010/011/012 →
+  VERIFIED (loader) on run 1. TI-LLAMA-012 (repeatability) stays
+  IN_PROGRESS until runs 2–3 are in.
+- **GLM harness (from CP-11's queue), for the record:** `glm-ngl0.md` —
+  native 0.310 / 0.107 / 0.325 t/s, loader run 1 0.324 t/s with identical
+  tokens; loader runs 2 and 3 **stood aside** (the shim found a stale socket
+  file and ran native mmap: 0.01 GB of I/O, 57 GB RSS) and are not loader
+  measurements. Fixed since (`stood_aside` flag, harness waits for accept,
+  shim retries 10 s); the 480B runs above are with the fix.

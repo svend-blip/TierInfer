@@ -305,6 +305,38 @@ this model on this host: **1 034 ms of I/O per token, 91.7 % hit, 0.63 GB in
 1 815 reads** — against native's 1.82 GB in 74 098 reads with more RAM.
 Prefetch at 150 GiB (§4.1) changed none of those figures.
 
+### 4.4 The loader under llama.cpp — real decode, real faults (CP-12)
+
+Goal 6 delivered: `build/libtierinfer_mmap.so` preloaded into an unmodified
+llama-server b10482 turns each shard's mapping into a userfaultfd region the
+TierInfer server answers per expert (`docs/LOADER.md`,
+`src/tierinfer/loader.py`). The harness (`benchmarks/loader_ab.py`) runs the
+two arms cold, same binary, same flags, same prompt, greedy.
+
+**Run 1 of 3** (`benchmarks/loader-out/q480b-ncmoe60-*-1.json`; runs 2–3
+pending and appended below when in):
+
+| arm | load s | prompt t/s | gen t/s | infer GB | infer reads | mean KB | await ms | tokens |
+|---|--:|--:|--:|--:|--:|--:|--:|---|
+| native `-ngl 99 -ncmoe 60` | 193 | 0.774 | 0.437 | 248.1 | 2 440 559 | 107 | 4.9 | reference |
+| loader, tier 150 GB, depth 0 | 37 | 0.750 | **0.622** | 157.9 | 427 924 | 387 | 2.0 | identical |
+
+Per generated token the loader served 464 of 496 routed experts from its
+tier (93.6 % median hit rate), copied 454 MB in 832 faults and evicted 16
+experts; wall 1.45 s median against native's 2.29 s. The prompt batch is
+where the tier fills: 5 100 misses, 150 GB in 148 s at 1.0 GB/s — the
+device's ceiling for expert-sized reads (§1, §4.2) — so prompt speed is
+the same in both arms and dominated by storage either way.
+
+The first attempt at this run crashed llama-server, and the cause is worth
+the record: experts of the two GPU layers are read through the mapping at
+load, llama.cpp then unmaps that 9.3 GB suffix, and the cache — full after
+the prompt batch — evicted precisely those never-routed experts into
+addresses the kernel had since reused. `MADV_DONTNEED` on a running
+process's own memory; `free(): invalid pointer`. The shim now interposes
+`munmap`, the server is told, and an eviction into a hole is refused on
+both sides (`11a9456`; CP-12 has the detail, tests reproduce it).
+
 ## 5. Predictor on 480B routing
 
 `benchmarks/routing_report.py`, generated tokens only, 50 warm-up tokens,
@@ -362,13 +394,10 @@ counted (`unmappable`), never raised.
 
 ## 7. What could not be measured, and why
 
-**Tokens per second of "llama.cpp + TierInfer".** No loader exists that puts
-TierInfer's buffers under llama.cpp's `ggml_mul_mat_id`; the audit names the
-point and `SCOPE.md` goal 6 carries it as the remaining work. Every TierInfer
-number in this document is I/O and residency under *replayed* real routing;
-none is a decode rate, and none is presented as one. The honest comparison
-available is I/O per token at equal or smaller RAM (§4), and it is the one
-made.
+**Tokens per second of "llama.cpp + TierInfer" — now measured (§4.4).**
+At the time of §1–§4.3 no loader existed; every TierInfer number there is
+I/O and residency under *replayed* real routing and is still presented as
+such. §4.4 is the live decode rate, one run in so far.
 
 **Compute overlap.** With no compute in the loop, prefetch lead time is
 whatever the sleeps in the `comp` arm provide (~500 ms per token, assumed).
@@ -389,7 +418,7 @@ two wrong guesses for every right one.
 | RAM behaviour | native: page cache ≈ 180 GB serving ~90 % of a 20.9 GB per-token working set; TierInfer: 100 GiB → 86.8 % hit, 150 GiB → 91.7 %, LRU-equal policy |
 | NVMe behaviour | md0 RAID0 over two USB 4M2 members; 1.7 GB/s sequential at load, ~0.75 GB/s for expert-sized random reads at <50 % utilisation; md merges native's 24 KB faults fivefold, TierInfer's 361 KB requests barely |
 | native generation | 0.241 t/s cold median at `-ngl 0` (0.196–0.244 over six runs); 0.38–0.51 with attention on the GPU; prompt class halves it (0.72 vs 0.39 during capture) |
-| TierInfer generation | **not measurable** — no loader (§7) |
+| TierInfer generation | **0.622 t/s** under llama.cpp with the loader, 150 GB tier, run 1 (§4.4); native on the same flags 0.437 |
 | native I/O | 1.82 GB and 74 098 reads of 24 KB per token (cold median) |
 | TierInfer I/O | 1.30 GB / 3 771 reads (100 GiB), **0.63 GB / 1 815 reads (150 GiB)** per token, 361 KB each; expert-sized `preadv`, one per projection |
 | RAM cache effectiveness | 86.8 % / 91.7 % hit with less RAM than native's page cache; 36–65 % fewer bytes, 20–40× fewer operations |
