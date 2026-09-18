@@ -5,3 +5,12 @@ cold residency 0.5417504970158573
 cold residency 0.5657793964836194
 prompt 111 tok in 133.2s (0.833 t/s); gen 32 tok in 140.9s (0.220 t/s)
 native-ngl0-cold2 done
+prompt 111 tok in 102.8s (1.079 t/s); gen 32 tok in 153.9s (0.201 t/s)
+native-ngl0-warm2 done
+cold residency 7.6113661844510804e-06
+prompt 111 tok in 149.8s (0.741 t/s); gen 32 tok in 127.0s (0.244 t/s)
+native-ngl0-cold3 done
+prompt 111 tok in 144.7s (0.767 t/s); gen 32 tok in 158.1s (0.196 t/s)
+native-ngl0-warm3 done
+crosscheck-done
+chain2-done

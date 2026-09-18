@@ -143,3 +143,36 @@ after the orphan was stopped; the runner now owns the server's pid, refuses
 a busy port, and reads `VmHWM`/`majflt` from `/proc` before stopping it.
 Raw artefacts of every run, including the discarded one's log lines, are in
 `benchmarks/480b/raw/`.
+
+## CP-4 — native llama.cpp baseline complete (`-ngl 0`)
+
+- **Revision:** the commit carrying this entry.
+- **Command (each run):**
+  `serve_run.sh <label> <out> 32 -- -m <shard 1> -ngl 0 -c 4096 -t 32 --no-warmup -fa off`
+  = `llama-server` b10482 on 127.0.0.1:8931, wait for `/health`, one
+  `/completion` with the 111-token prompt in `raw/prompt.txt`, `n_predict 32`,
+  `temperature 0`, `cache_prompt false`; `/proc/diskstats` for md0/sda/sdb
+  sampled every 2 s; cold = `tierinfer.bench.drop_cache` over the six
+  shards (residency 0.0 % / 0.0008 % after).
+- **Result:** six runs, three cold and three warm, table in
+  `benchmarks/480b/VALIDATION-480B.md` §1 and `raw/base/summary.json`.
+  Generation **0.241 t/s cold median (0.220–0.244), 0.201 warm median
+  (0.196–0.225)**; prompt 0.745 / 1.079 t/s; load 171–201 s (MAP_POPULATE).
+  Per generated token: **1.82 GB cold / 2.18 GB warm from md0 in ~74 000 /
+  84 000 reads of 22–26 KB (logical), merged by md to 98–147 KB at the
+  members**; await 3.2–4.8 ms; md0 utilisation 0.39–0.48; CPU 83–89 % busy.
+- **What it says:** native generation is CPU-bound faulting, not
+  bandwidth-bound — the device runs under half utilised at ~0.4 GB/s. The
+  page cache already serves ~90 % of a token's 20.9 GB working set. md's
+  merging is a factor of ~5 and belongs to md.
+- **Trace tool validated on the new build:** GLM-4.5-Air, the same 30-token
+  prompt decoded batched and one token per `llama_decode`: routed-expert
+  agreement **97.9 % (10 348/10 568), no token below 95 %**; consecutive
+  prompt rows overlap by 9.7 %, so the rows are distinct tokens, not copies.
+  The strided read is right; the residual 2 % is batched-vs-single numerical
+  difference at marginal experts. (`raw/glm-batched.jsonl`,
+  `raw/glm-onebyone.jsonl`.)
+- **Unresolved:** RSS/faults missing for cold1 and warm1 (runner defect,
+  fixed from cold2).
+- **Next:** CP-6 routing capture from the 480B is running (`chain3`), CP-5
+  GPU sweep queued behind it (`chain4`), replay arms behind that (`chain5`).

@@ -1,0 +1,20 @@
+0.00.022.954 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.119.121 W srv  llama_server: -----------------
+0.00.119.124 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.119.124 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.119.124 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.119.124 W srv  llama_server: -----------------
+0.00.120.491 I srv    load_model: loading model '/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf'
+0.00.429.931 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+2.18.465.617 I cmn          init: llama threadpool init, n_threads = 32
+2.49.918.563 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+2.49.929.976 I srv  llama_server: model loaded
+2.49.929.981 I srv  llama_server: listening on http://127.0.0.1:8931
+2.50.463.920 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+2.50.463.974 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+7.53.299.807 I slot print_timing: id  3 | task 0 | prompt eval time =  144701.92 ms /   111 tokens ( 1303.62 ms per token,     0.77 tokens per second)
+7.53.299.812 I slot print_timing: id  3 | task 0 |        eval time =  158128.61 ms /    32 tokens ( 5100.92 ms per token,     0.20 tokens per second)
+7.53.299.812 I slot print_timing: id  3 | task 0 |       total time =  302830.54 ms /   143 tokens
+7.53.300.050 I slot print_timing: id  3 | task 0 |    graphs reused =         30
+7.53.303.784 I slot      release: id  3 | task 0 | stop processing: n_tokens = 142, truncated = 0
+7.53.401.399 I srv    operator(): operator(): cleaning up before exit...

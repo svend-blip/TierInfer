@@ -40,13 +40,29 @@ partial by construction). Load time = seconds from process start to
 `/health` reporting the model loaded; llama.cpp maps with `MAP_POPULATE`,
 which reads the file through once.
 
-_(table filled at CP-4; cold1/cold2/warm1 so far)_
+| run | load s | prompt t/s | gen t/s | gen: md0 GB/token | md0 reads/token | md0 mean KB | sda mean KB | await ms | md0 util | CPU busy | server RSS GB | major faults |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| cold1 | 191 | 0.745 | 0.241 | 1.82 | 73 142 | 25 | 134 | 4.43 | 0.46 | 0.84 | — | — |
+| cold2 | 183 | 0.833 | 0.220 | 1.77 | 74 098 | 23 | 125 | 4.24 | 0.43 | 0.85 | 183 | 1 027 458 |
+| cold3 | 201 | 0.741 | 0.244 | 1.86 | 78 315 | 24 | 131 | 4.37 | 0.48 | 0.84 | 170 | 190 276 |
+| warm1 † | 0 | 2.084 | 0.225 | 1.36 | 63 985 | 22 | 98 | 3.19 | 0.39 | 0.89 | — | — |
+| warm2 | 193 | 1.079 | 0.201 | 2.29 | 97 557 | 22 | 147 | 4.84 | 0.48 | 0.83 | 173 | 247 601 |
+| warm3 | 171 | 0.767 | 0.196 | 2.18 | 84 011 | 26 | 126 | 4.35 | 0.43 | 0.84 | 183 | 416 553 |
+| **cold median (n=3)** | 191 | 0.745 | **0.241** | **1.82** | 74 098 | 24 | 131 | 4.37 | 0.46 | 0.84 | | |
+| **warm median (n=3)** | 171 | 1.079 | **0.201** | **2.18** | 84 011 | 22 | 126 | 4.35 | 0.43 | 0.84 | | |
 
-| run | load s | prompt t/s | gen t/s | gen: md0 GB/token | md0 reads/token | md0 mean KB | sda mean KB | await ms | md0 util | CPU busy |
-|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| cold1 | 191 | 0.745 | 0.241 | 1.82 | 73 142 | 25 | 134 | 4.43 | 0.46 | 0.84 |
-| cold2 | 183 | 0.833 | 0.220 | 1.77 | 74 098 | 23 | 125 | 4.24 | 0.43 | 0.85 |
-| warm1 | 0 (server kept) | 2.084 | 0.225 | 1.36 | 63 985 | 22 | 98 | 3.19 | 0.39 | 0.89 |
+† warm1 reused cold1's still-running server (see the incident in
+`docs/CHECKPOINTS.md` CP-3), so it is the one run whose model was *already
+mapped*: prompt processing at 2.08 t/s against 0.75–1.08 everywhere else
+shows what the mapping's populated pages are worth. RSS and faults were not
+captured for the first two runs (the runner read them from the wrong
+process); the server's RSS is the mapped file, not an allocation.
+
+Generation ranges 0.196–0.244 t/s over six runs and the "warm" runs are not
+faster: a warm start that reloads the server re-populates the mapping from
+the file's beginning and evicts what the previous run left, so it reads
+*more* per token (2.2 GB) than a cold start (1.8 GB). Only the run that kept
+its server was warm in any useful sense, and only for the prompt.
 
 The first thing the table says: native generation is **not bandwidth-bound**.
 md0 is under half utilised, delivering ~0.4 GB/s of a device measured at
@@ -59,7 +75,7 @@ so ~90 % of what a token touches was still resident from recent tokens.
 
 ## 2. GPU offload point (`-ngl 99 -ncmoe N`)
 
-_(CP-5, running)_
+_(CP-5, queued behind the routing capture)_
 
 ## 3. Routing captured from the running 480B
 
