@@ -237,3 +237,27 @@ def test_the_probe_measures_the_device_and_the_decision_says_so(tmp_path):
     assert cfg.batch_demand is (cfg.concurrency_gain >= CONCURRENCY_WORTHWHILE)
     assert any("demand batching" in d and "threshold" in d for d in cfg.decisions)
     assert cfg.to_dict()["batch_demand"] is cfg.batch_demand
+
+
+
+def test_the_storage_probe_measures_four_things_on_the_models_own_bytes(tmp_path):
+    import sys, os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from test_gguf import IQ4_XS, F32, write_gguf
+    from tierinfer.gguf import read_gguf
+    from tierinfer.index import ModelIndex
+    from tierinfer.autoconfig import probe_storage
+    tensors = [("token_embd.weight", (256, 64), F32)]
+    for l in range(2):
+        tensors += [(f"blk.{l}.ffn_gate_inp.weight", (256, 8), F32),
+                    (f"blk.{l}.ffn_gate_exps.weight", (256, 64, 8), IQ4_XS),
+                    (f"blk.{l}.ffn_up_exps.weight", (256, 64, 8), IQ4_XS),
+                    (f"blk.{l}.ffn_down_exps.weight", (256, 64, 8), IQ4_XS)]
+    p = write_gguf(tmp_path / "m.gguf", tensors, {"general.architecture": "glm4moe",
+                   "glm4moe.expert_count": 8, "glm4moe.expert_used_count": 2, "glm4moe.block_count": 2})
+    ix = ModelIndex(read_gguf(p))
+    c = probe_storage(ix, sequential_bytes=64 * 1024, random_reads=8, expert_reads=4, cold=False)
+    assert c.device and c.sequential_mbps > 0 and c.random_4k_iops > 0
+    assert c.expert_read_mbps > 0 and c.concurrency_gain > 0
+    assert c.bytes_read >= 64 * 1024 + 8 * 4096
+    assert "IOPS" in c.explain()

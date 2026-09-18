@@ -109,6 +109,7 @@ class Configuration:
     #: ``None`` — absent, not defaulted, as with every other unmeasured figure.
     batch_demand: bool | None = None
     concurrency_gain: float | None = None
+    storage: "StorageCharacteristics | None" = None
 
     @property
     def usable(self) -> bool:
@@ -166,6 +167,13 @@ class Configuration:
                 "prefetch_depth": self.prefetch_depth,
                 "resident_share": self.resident_share,
                 "batch_demand": self.batch_demand, "concurrency_gain": self.concurrency_gain,
+                "storage": (None if self.storage is None else {
+                    "device": self.storage.device, "sequential_mbps": self.storage.sequential_mbps,
+                    "random_4k_iops": self.storage.random_4k_iops,
+                    "random_4k_latency_ms": self.storage.random_4k_latency_ms,
+                    "expert_read_mbps": self.storage.expert_read_mbps,
+                    "expert_read_latency_ms": self.storage.expert_read_latency_ms,
+                    "concurrency_gain": self.storage.concurrency_gain}),
                 "usable": self.usable, "problems": list(self.problems),
                 "decisions": list(self.decisions)}
 
@@ -313,10 +321,13 @@ def configure_measured(index, **kw) -> Configuration:
     """
     cfg = configure(index, **kw)
     try:
-        gain = probe_concurrency(index)
+        chars = probe_storage(index)
     except (OSError, ValueError) as e:
-        cfg.decisions.append(f"demand batching not decided: the probe could not run ({e})")
+        cfg.decisions.append(f"storage not measured: the probe could not run ({e})")
         return cfg
+    cfg.storage = chars
+    cfg.decisions.append("storage measured: " + chars.explain())
+    gain = chars.concurrency_gain
     cfg.concurrency_gain = gain
     cfg.batch_demand = gain >= CONCURRENCY_WORTHWHILE
     cfg.decisions.append(
@@ -324,3 +335,93 @@ def configure_measured(index, **kw) -> Configuration:
         f"measured {gain:.2f}x a serial read on this device "
         f"(threshold {CONCURRENCY_WORTHWHILE:g})")
     return cfg
+
+
+# -- the device, measured (item 4; scope 7.8) --------------------------------
+
+
+@dataclass(frozen=True)
+class StorageCharacteristics:
+    """What the device under the model actually does, measured on the model's
+    own bytes with a cold page cache. Every figure is an observation of this
+    host at this moment, not a specification."""
+
+    device: str
+    sequential_mbps: float          # one thread, 256 MB contiguous
+    random_4k_iops: float           # one thread, 4 KiB at random offsets
+    random_4k_latency_ms: float
+    expert_read_mbps: float         # one thread, expert-sized ranges at expert offsets
+    expert_read_latency_ms: float
+    concurrency_gain: float         # 8 workers over 1, expert-sized (probe_concurrency)
+    bytes_read: int
+
+    def explain(self) -> str:
+        return (f"{self.device}: sequential {self.sequential_mbps:.0f} MB/s; random 4 KiB "
+                f"{self.random_4k_iops:.0f} IOPS ({self.random_4k_latency_ms:.2f} ms); expert-sized "
+                f"{self.expert_read_mbps:.0f} MB/s ({self.expert_read_latency_ms:.1f} ms each); "
+                f"8 in flight {self.concurrency_gain:.2f}x one")
+
+
+def probe_storage(index, *, sequential_bytes: int = 256 * MB, random_reads: int = 200,
+                  expert_reads: int = 16, cold: bool = True) -> StorageCharacteristics:
+    """Measure the device under the model: sequential, random-4K, expert-sized, concurrency.
+
+    Reads only the model's own bytes and drops them from the page cache
+    first (`posix_fadvise`, no root), so the numbers are the device's, not
+    RAM's. Costs about half a gigabyte of reads on the 480B.
+    """
+    import random
+    import time
+    from .bench import device_for
+    from .index import ByteRange
+    from .storage import StorageBackend
+
+    files = index.gguf.files
+    path = files[0]
+    size = path.stat().st_size
+    device = device_for(path)
+    rng = random.Random(7)
+    total = 0
+    with StorageBackend.for_model(index.gguf) as b:
+        # sequential: one contiguous span in the middle of the first file
+        span = min(sequential_bytes, size // 2)
+        seq = ByteRange("probe.seq", (size // 2) & ~4095, span, path)
+        if cold:
+            b.evict([seq])
+        t0 = time.perf_counter()
+        b.read([seq])
+        seq_s = time.perf_counter() - t0
+        total += span
+        # random 4 KiB
+        pages = [ByteRange(f"probe.4k.{i}", rng.randrange(0, size - 4096) & ~4095, 4096, path)
+                 for i in range(random_reads)]
+        if cold:
+            b.evict(pages)
+        t0 = time.perf_counter()
+        for r in pages:
+            b.read([r])
+        r4_s = time.perf_counter() - t0
+        total += 4096 * random_reads
+        # expert-sized, at expert offsets
+        moe = index.moe_layers
+        refs = [index.expert(moe[i % len(moe)], (i * 53) % index.expert_count) for i in range(expert_reads)] if moe else []
+        flat = [r for ref in refs for r in ref.ranges]
+        if cold and flat:
+            b.evict(flat)
+        t0 = time.perf_counter()
+        for ref in refs:
+            b.read(list(ref.ranges))
+        ex_s = time.perf_counter() - t0
+        ex_bytes = sum(r.nbytes for r in flat)
+        total += ex_bytes
+    gain = probe_concurrency(index, experts=expert_reads, cold=cold) if moe else 1.0
+    return StorageCharacteristics(
+        device=device,
+        sequential_mbps=span / seq_s / 1e6 if seq_s > 0 else 0.0,
+        random_4k_iops=random_reads / r4_s if r4_s > 0 else 0.0,
+        random_4k_latency_ms=r4_s / random_reads * 1000,
+        expert_read_mbps=ex_bytes / ex_s / 1e6 if ex_s > 0 and ex_bytes else 0.0,
+        expert_read_latency_ms=ex_s / len(refs) * 1000 if refs else 0.0,
+        concurrency_gain=gain,
+        bytes_read=total,
+    )
