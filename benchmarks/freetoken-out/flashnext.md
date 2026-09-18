@@ -3,14 +3,14 @@
 | run | arm | tier GB | depth | load s | wall s | FT decode t/s | infer GiB | reads | mean KB | load GiB | output = first |
 |---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|
 | flashnext-fix-t8-tiered-1 | tiered | 8.0 | 0 | 44 | 38.5 | 6.1 | 18.52 | 82640 | 235 | 57.3 | yes |
-| flashnext-fix-t8d8-tiered-1 | tiered | 8.0 | 0 | 44 | 38.2 | 6.3 | 18.63 | 83163 | 235 | 57.3 | yes |
-| flashnext-fix-t8d8-tiered-2 | tiered | 8.0 | 0 | 44 | 38.8 | 6.2 | 18.63 | 83158 | 235 | 57.3 | yes |
+| flashnext-fix-t8d8-tiered-1 | tiered | 8.0 | 8 | 44 | 38.2 | 6.3 | 18.63 | 83163 | 235 | 57.3 | yes |
+| flashnext-fix-t8d8-tiered-2 | tiered | 8.0 | 8 | 44 | 38.8 | 6.2 | 18.63 | 83158 | 235 | 57.3 | yes |
 | flashnext-native-1 | native | — | — | 55 | 4.3 | 34.8 | 0.01 | 2472 | 4 | 72.7 | yes |
 | flashnext-native-2 | native | — | — | 54 | 4.3 | 35.0 | 0.01 | 2472 | 4 | 72.7 | yes |
 | flashnext-t16-tiered-1 | tiered | 16.0 | 0 | 44 | 25.1 | 35.4 | 15.46 | 69158 | 234 | 57.3 | yes |
 | flashnext-t16-tiered-2 | tiered | 16.0 | 0 | 44 | 25.2 | 34.8 | 15.46 | 69214 | 234 | 57.3 | yes |
-| flashnext-t8d8-tiered-1 | tiered | 8.0 | 0 | 44 | 39.6 | 5.4 | 18.73 | 83580 | 235 | 57.3 | yes |
-| flashnext-t8d8-tiered-2 | tiered | 8.0 | 0 | 44 | 40.2 | 5.4 | 18.73 | 83628 | 235 | 57.3 | yes |
+| flashnext-t8d8-tiered-1 | tiered | 8.0 | 8 | 44 | 39.6 | 5.4 | 18.73 | 83580 | 235 | 57.3 | yes |
+| flashnext-t8d8-tiered-2 | tiered | 8.0 | 8 | 44 | 40.2 | 5.4 | 18.73 | 83628 | 235 | 57.3 | yes |
 | flashnext-tiered-1 | tiered | 8.0 | 0 | 45 | 40.3 | 5.5 | 18.74 | 83767 | 235 | 57.3 | yes |
 | flashnext-tiered-2 | tiered | 8.0 | 0 | 44 | 39.6 | 5.4 | 18.73 | 83660 | 235 | 57.3 | yes |
 

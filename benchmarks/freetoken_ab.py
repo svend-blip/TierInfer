@@ -185,7 +185,7 @@ def run_arm(label: str, arm: str, a, out: Path, device: str, members: list[str])
            "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
            "text": text, "stats_before": stats0, "stats_after": stats1,
            "io_load": _delta(io0, io_load, members), "io_infer": _delta(io_load, io1, members),
-           "arm": arm, "rep": label.rsplit("-", 1)[-1],
+           "arm": arm, "rep": label.rsplit("-", 1)[-1], "depth": a.depth if arm == "tiered" else None,
            "tier_gb": a.tier_gb if arm == "tiered" else None, "cpu_layers": a.cpu_layers}
     if usage.get("completion_tokens"):
         res["gen_tps_wall"] = usage["completion_tokens"] / wall     # upper bound on decode time: includes prefill

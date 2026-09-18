@@ -42,7 +42,14 @@ def main(out: Path, prefix: str) -> int:
              "|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|"]
     for r in runs:
         io, th = r["io_infer"], r["stats_after"].get("throughput", {})
-        depth = "—" if r.get("arm") != "tiered" else next((r["cmd"][i + 1] for i, x in enumerate(r["cmd"]) if x == "--depth"), "0")
+        if r.get("arm") != "tiered":
+            depth = "—"
+        elif r.get("depth") is not None:
+            depth = str(r["depth"])
+        else:                                   # older records: the label says (…-t8d8-…)
+            import re
+            m = re.search(r"d(\d+)-tiered", r["_label"])
+            depth = m.group(1) if m else "0"
         lines.append(f"| {r['_label']} | {r.get('arm', '?')} | {r.get('tier_gb') or '—'} | {depth} | {r['load_s']:.0f} | {r['wall_s']:.1f} | "
                      f"{th.get('decode_tps', '—')} | {io['bytes'] / GiB:.2f} | {io['reads']} | {io['mean_read_bytes'] / 1024:.0f} | "
                      f"{r['io_load']['bytes'] / GiB:.1f} | {'yes' if r['text'] == ref else 'NO'} |")
