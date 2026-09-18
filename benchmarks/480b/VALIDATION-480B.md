@@ -79,8 +79,35 @@ _(CP-5, queued behind the routing capture)_
 
 ## 3. Routing captured from the running 480B
 
-_(CP-6: two 400-token traces, prose and code prompts; expert identities,
-activation frequency, hot/cold, horizon)_
+`tools/trace/tierinfer-trace -m <shard 1> -ngl 99 --cpu-moe -t 32 -c 4096 -n 400 -f <prompt>`
+— attention on the GPU, the fused expert tensors kept on the CPU by
+tensor-buffer override, routing read from `ffn_moe_topk-<layer>` through
+`cb_eval` row by row (the strided-view fix, verified on GLM at 97.9 %
+agreement between batched and one-at-a-time decodes). Nothing in llama.cpp
+is patched. Expert identities are the router's own top-k indices, never
+inferred from file access.
+
+| | prose prompt | code prompt |
+|---|--:|--:|
+| generated tokens (+ prompt) | 400 (+111) | _(running)_ |
+| capture rate | load 187 s, prompt 0.93 t/s, **gen 0.72 t/s** | |
+| experts per token | 496 = layout → 20.9 GB, 7.7 % of the file | |
+| distinct experts in 400 tokens | 7 121 of 9 920 (71.8 %); 2 799 never routed | |
+| activation skew | top 10 % of a layer's experts take **56 %** of its activations | |
+| neighbour-token overlap | 38.5 % | |
+| horizon W=8 / 32 / 128 | 62 GB / 115 GB / **173 GB** (23 / 43 / 64 % of the file) | |
+
+The horizon row explains §1's native numbers directly: 128 consecutive
+tokens need 173 GB, the page cache holds about 180 GB, so Linux already
+serves ~90 % of a token's 20.9 GB from RAM and reads 1.8 GB. Any RAM tier
+TierInfer runs with less than that is starting from behind; any advantage
+has to come from *what* is kept and *how* the misses are read, not from
+keeping more.
+
+Hot/cold is measurable and strong — 56 % of a layer's activations land on
+its 16 most-used experts, and a quarter of all experts were never asked for
+in 400 tokens — but §5 shows that frequency alone is the weakest predictor
+of the *next* token's experts, as it was on GLM.
 
 ## 4. TierInfer replay — real routing, real files, real caches, no compute
 
@@ -91,8 +118,25 @@ request sizes, VRAM hit rate and transfer rate)_
 
 ## 5. Predictor on 480B routing
 
-_(CP-7: recall@k of frequency / persistence / transition / adaptive, per
-prompt class; there is no trainable prerouter — see the audit)_
+`benchmarks/routing_report.py`, generated tokens only, 50 warm-up tokens,
+each layer predicted before its routing is observed and with the current
+token's lower layers available (what a prefetcher would actually know).
+All four predictors are **heuristic**; there is no trainable prerouter
+(audit item 7).
+
+| recall@k, prose | frequency | persistence | transition | adaptive blend | adaptive waste |
+|---|--:|--:|--:|--:|--:|
+| k = 8 (one token's 8) | 34.2 % | 38.5 % | **47.0 %** | 46.4 % | 53.6 % |
+| k = 16 | 51.9 % | 51.8 % | **66.8 %** | 66.1 % | 67.0 % |
+| k = 32 | 72.6 % | 54.4 % | **84.3 %** | 83.4 % | 79.1 % |
+
+Context beats the frequency floor by 13–15 points at k=8–16, as on GLM
+(REAL-ROUTING.md); the transition table — which expert follows which across
+adjacent layers within the same token — is the strongest single signal here,
+and the adaptive blend tracks it to within a point without being told.
+Waste is the price: at k=16, two of three prefetched experts go unused.
+
+_(code prompt: pending)_
 
 ## 6. Failure behaviour
 
