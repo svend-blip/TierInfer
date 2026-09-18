@@ -184,6 +184,77 @@ just does it badly, reacting after a page is already missing.
 TierInfer's job is to replace that with reads it asked for in advance, at
 expert granularity, while the GPU is busy with the previous token.
 
+## Using it
+
+Three ways in, all on the same server process. Details, flags and
+diagnostics: `docs/LOADER.md` (llama.cpp), `docs/FREETOKEN.md` (FreeToken),
+FlowRunner's `docs/ENGINE-tierinfer.md` (through an orchestrator).
+
+**1. Under llama.cpp, unmodified.** Build the shim once against your
+llama.cpp tree, start the server on any shard of the model, preload the
+shim into `llama-server`:
+
+```console
+LLAMA_CPP=~/llama.cpp tools/uffd/build.sh            # once: build/libtierinfer_mmap.so
+
+tierinfer serve model-00001-of-00006.gguf --sock /tmp/tierinfer.sock --ram-gb 150 \
+    --telemetry run.jsonl                             # terminal 1; prints the env for terminal 2
+
+LD_PRELOAD=$PWD/build/libtierinfer_mmap.so TIERINFER_SOCK=/tmp/tierinfer.sock \
+TIERINFER_FILES=model-00001-of-00006.gguf:…:model-00006-of-00006.gguf \
+llama-server -m model-00001-of-00006.gguf -ngl 99 -ncmoe 60 -c 4096   # terminal 2
+```
+
+The shim turns each shard's mapping into a region the server fills per
+expert on first touch and empties under `--ram-gb`; routing reaches the
+server through `cb_eval`. `--ram-gb` omitted means autoconfig's share of
+available RAM. `--depth N` turns prefetch on, `--predictor prerouter`
+swaps the guesser, `--align 524288` rounds reads to md's stripe,
+`--adapt-depth` lets the depth follow prefetch yield — every one of
+those is measured and none pays on this host (CP-13, CP-15), so the
+defaults are demand-only and exact. `TIERINFER_DEBUG=1` on the server
+logs every fault. Without `LD_PRELOAD` the same binary is the native
+baseline.
+
+**2. Under FreeToken.** Apply `patches/freetoken-tierinfer-tier.patch` to
+a FreeToken checkout, serve the FTW checkpoint directory, and tell
+FreeToken where the socket is; the `--moe-cpu-layers` layers' banks
+become TierInfer-served buffers, GPU layers stay FreeToken's:
+
+```console
+tierinfer serve /models/<ftw-dir> --sock /tmp/tierinfer-ft.sock --ram-gb 16 --telemetry ft.jsonl
+TIERINFER_SOCK=/tmp/tierinfer-ft.sock TIERINFER_SRC=$PWD/src \
+    ft serve --model /models/<ftw-dir> --moe-strategy offload --moe-cpu-layers 12 …
+```
+
+If the server dies, FreeToken's client serves its own faults from the
+checkpoint and says so; the output stays exact.
+
+**3. Through FlowRunner.** A flow declares a capability document (model,
+context, residency share) or, for FreeToken, a tier size and the tiered
+layers; `flowrunner engine run --config engine.json --complete "…" --once`
+resolves it with `tierinfer resolve`, starts server and runtime, runs the
+completion and hands back the endpoint, the loaded model, timings and
+TierInfer's telemetry. Both runtimes are supported (`runtime: freetoken`).
+
+**Looking at a model without running anything:**
+
+```console
+tierinfer inspect model-00001-of-00006.gguf        # layers, experts, sizes, shards
+tierinfer expert  model-00001-of-00006.gguf 18 37  # the byte ranges of one expert
+tierinfer resolve capability.json model-00001-of-00006.gguf   # what this host would grant
+```
+
+**Measuring:** `benchmarks/loader_ab.py` (llama.cpp native vs loader, cold,
+repeated, greedy tokens compared), `benchmarks/freetoken_ab.py` (FreeToken
+native vs tiered, with `--kill-server-after` for the failure injection),
+`benchmarks/replay.py` (real routing, real files, no compute),
+`benchmarks/prerouter_eval.py`, `tools/trace` (routing capture), and
+`python tools/smoketest.py` for the ten-second check that every component
+works on this machine. Results and the method live in
+`benchmarks/480b/VALIDATION-480B.md`, `benchmarks/loader-out/`,
+`benchmarks/freetoken-out/` and `docs/CHECKPOINTS.md`.
+
 ## Install
 
 ```console
