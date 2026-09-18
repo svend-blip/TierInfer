@@ -200,3 +200,40 @@ def test_measuring_this_host_reports_what_it_has():
     assert h.ram_available > 0
     if h.has_gpu:
         assert h.vram_total > h.vram_free >= 0
+
+
+
+# -- the concurrency probe, on a file the test writes ------------------------
+
+
+def test_the_probe_measures_the_device_and_the_decision_says_so(tmp_path):
+    """The ratio itself is a property of the machine the test runs on; what is
+    tested is that it is measured from the model's own files, recorded, and
+    turned into a decision that names its threshold."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from test_gguf import IQ4_XS, F32, write_gguf
+    from tierinfer.gguf import read_gguf
+    from tierinfer.index import ModelIndex
+    from tierinfer.autoconfig import (CONCURRENCY_WORTHWHILE, configure_measured,
+                                      probe_concurrency)
+    tensors = [("token_embd.weight", (256, 8), F32)]
+    for l in range(4):
+        tensors += [(f"blk.{l}.attn_q.weight", (256, 8), IQ4_XS),
+                    (f"blk.{l}.ffn_gate_inp.weight", (256, 8), F32),
+                    (f"blk.{l}.ffn_gate_exps.weight", (256, 64, 8), IQ4_XS),
+                    (f"blk.{l}.ffn_up_exps.weight", (256, 64, 8), IQ4_XS),
+                    (f"blk.{l}.ffn_down_exps.weight", (256, 64, 8), IQ4_XS)]
+    p = write_gguf(tmp_path / "m.gguf", tensors, {"general.architecture": "glm4moe",
+                   "glm4moe.expert_count": 8, "glm4moe.expert_used_count": 2,
+                   "glm4moe.block_count": 4, "glm4moe.attention.head_count_kv": 1,
+                   "glm4moe.attention.key_length": 8, "glm4moe.attention.value_length": 8})
+    ix = ModelIndex(read_gguf(p))
+    gain = probe_concurrency(ix, experts=8, workers=4, cold=False)
+    assert gain > 0
+    host = FakeHost() if "FakeHost" in globals() else None
+    cfg = configure_measured(ix, host=host) if host else configure_measured(ix)
+    assert cfg.concurrency_gain is not None and cfg.concurrency_gain > 0
+    assert cfg.batch_demand is (cfg.concurrency_gain >= CONCURRENCY_WORTHWHILE)
+    assert any("demand batching" in d and "threshold" in d for d in cfg.decisions)
+    assert cfg.to_dict()["batch_demand"] is cfg.batch_demand

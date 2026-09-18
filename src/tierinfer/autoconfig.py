@@ -104,6 +104,11 @@ class Configuration:
     host: Host
     decisions: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    #: Read a layer's routed misses concurrently through the streamer, or one
+    #: at a time. Decided by :func:`probe_concurrency` when it was run, else
+    #: ``None`` — absent, not defaulted, as with every other unmeasured figure.
+    batch_demand: bool | None = None
+    concurrency_gain: float | None = None
 
     @property
     def usable(self) -> bool:
@@ -142,6 +147,10 @@ class Configuration:
                   f"stream workers  {self.stream_workers:>7}",
                   f"prefetch depth  {self.prefetch_depth:>7}  (a starting point; "
                   "the policy moves it)"]
+        if self.concurrency_gain is not None:
+            lines.append(f"demand batching {'on' if self.batch_demand else 'off':>7}  "
+                         f"(8 concurrent expert reads ran {self.concurrency_gain:.2f}x a serial "
+                         "read on this device)")
         if self.decisions:
             lines += ["", "decisions:"] + [f"  - {d}" for d in self.decisions]
         if self.problems:
@@ -156,6 +165,7 @@ class Configuration:
                 "stream_workers": self.stream_workers,
                 "prefetch_depth": self.prefetch_depth,
                 "resident_share": self.resident_share,
+                "batch_demand": self.batch_demand, "concurrency_gain": self.concurrency_gain,
                 "usable": self.usable, "problems": list(self.problems),
                 "decisions": list(self.decisions)}
 
@@ -237,3 +247,80 @@ def configure(index, *, context_length: int = 8192, host: Host | None = None,
                          stream_workers=workers, prefetch_depth=prefetch_depth,
                          budget=budget, host=host,
                          decisions=decisions, problems=problems)
+
+
+# -- measuring the device instead of assuming it ----------------------------
+
+
+#: Below this, eight reads in flight are not worth their queueing on the
+#: device: the 480B validation measured 0.95x on a USB RAID0 (concurrency
+#: only queued 30 MB reads behind each other, await 1.4 -> 4.2 ms) against
+#: 3.47x on the reference NVMe. The threshold leaves room for noise either
+#: side of 1.0 rather than flipping on a run-to-run difference.
+CONCURRENCY_WORTHWHILE = 1.25
+
+
+def probe_concurrency(index, *, experts: int = 16, workers: int = 8,
+                      cold: bool = True) -> float:
+    """How much faster ``workers`` concurrent expert reads are than one at a time.
+
+    Reads ``experts`` routed experts from the model's own files, first
+    serially then through the streamer, each from a cold page cache when
+    ``cold`` is set (``posix_fadvise(DONTNEED)`` on the ranges, no root),
+    and returns serial seconds divided by concurrent seconds. Costs about
+    two reads of ``experts`` × expert size — half a gigabyte on the 480B —
+    and answers a question that differs by a factor of three between two
+    devices on the same host, so it is worth asking rather than assuming.
+    """
+    import time
+    from .storage import StorageBackend
+    from .stream import BufferPool, ExpertStreamer
+
+    moe = index.moe_layers
+    if not moe or index.expert_count <= 0:
+        raise ValueError("the model has no routed experts to probe with")
+    # spread over layers so the reads are as scattered as real routing
+    keys = [(moe[i % len(moe)], (i * 37) % index.expert_count) for i in range(experts)]
+    refs = [index.expert(l, e) for l, e in keys]
+    slot = max(r.nbytes for r in refs)
+    with StorageBackend.for_model(index.gguf) as b:
+        flat = [r for ref in refs for r in ref.ranges]
+        if cold:
+            b.evict(flat)
+        t0 = time.perf_counter()
+        for ref in refs:
+            b.read(list(ref.ranges))
+        serial = time.perf_counter() - t0
+        if cold:
+            b.evict(flat)
+        with ExpertStreamer(b, BufferPool(slot, len(refs)), workers=workers) as s:
+            t0 = time.perf_counter()
+            loads = [s.submit((r.layer, r.expert), r.ranges) for r in refs]
+            for load in loads:
+                s.wait(load, timeout=120)
+                s.release(load)
+            concurrent = time.perf_counter() - t0
+    return serial / concurrent if concurrent > 0 else float("inf")
+
+
+def configure_measured(index, **kw) -> Configuration:
+    """`configure`, plus the one figure that needs the device touched to know.
+
+    Runs :func:`probe_concurrency` on the model's own files and records the
+    decision. Separate from `configure` so that callers who must not touch
+    the device — a dry run, a host without the model mounted — still get a
+    configuration, with the field absent rather than guessed.
+    """
+    cfg = configure(index, **kw)
+    try:
+        gain = probe_concurrency(index)
+    except (OSError, ValueError) as e:
+        cfg.decisions.append(f"demand batching not decided: the probe could not run ({e})")
+        return cfg
+    cfg.concurrency_gain = gain
+    cfg.batch_demand = gain >= CONCURRENCY_WORTHWHILE
+    cfg.decisions.append(
+        f"demand batching {'on' if cfg.batch_demand else 'off'}: 8 concurrent expert reads "
+        f"measured {gain:.2f}x a serial read on this device "
+        f"(threshold {CONCURRENCY_WORTHWHILE:g})")
+    return cfg

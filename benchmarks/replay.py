@@ -54,7 +54,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.stdout.reconfigure(line_buffering=True)
 
-from tierinfer.autoconfig import Host, configure  # noqa: E402
+from tierinfer.autoconfig import Host, configure, configure_measured  # noqa: E402
 from tierinfer.bench import (device_for, disk_counters, drop_cache, member_devices,  # noqa: E402
                              residency_of)
 from tierinfer.cache import ExpertCache  # noqa: E402
@@ -152,9 +152,12 @@ def main() -> int:
     ap.add_argument("--inject", choices=["none", "bad-predictor", "fail-reads", "tiny-pool",
                                          "tiny-vram", "missing-range"], default="none")
     ap.add_argument("--snapshot-every", type=int, default=10, help="tokens between telemetry snapshots")
-    ap.add_argument("--no-batch-demand", action="store_true",
-                    help="read a layer's routed misses one synchronous pread at a time instead of "
-                         "together through the streamer")
+    ap.add_argument("--batch-demand", choices=["auto", "on", "off"], default="auto",
+                    help="read a layer's routed misses together through the streamer (on), one "
+                         "synchronous pread at a time (off), or let autoconfig's concurrency probe "
+                         "decide from this device (auto, default)")
+    ap.add_argument("--no-batch-demand", action="store_const", const="off", dest="batch_demand",
+                    help="same as --batch-demand off")
     a = ap.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
@@ -166,8 +169,16 @@ def main() -> int:
     expert_bytes = ix.expert_nbytes_max()      # slots hold the largest; layers differ (Q6_K vs Q4_K down)
     floor = ix.always_resident_nbytes()
     host = Host.measure()
-    cfg = configure(ix, context_length=a.context, host=host, stream_workers=a.workers,
-                    prefetch_depth=a.depth)
+    if a.batch_demand == "auto":
+        cfg = configure_measured(ix, context_length=a.context, host=host, stream_workers=a.workers,
+                                 prefetch_depth=a.depth)
+        batch_demand = bool(cfg.batch_demand)
+        print(f"probe: 8 concurrent expert reads ran {cfg.concurrency_gain:.2f}x a serial read "
+              f"on this device -> demand batching {'on' if batch_demand else 'off'}")
+    else:
+        cfg = configure(ix, context_length=a.context, host=host, stream_workers=a.workers,
+                        prefetch_depth=a.depth)
+        batch_demand = a.batch_demand == "on"
     ram_bytes = int(a.ram_gb * GB) if a.ram_gb > 0 else cfg.ram_bytes
     ram_slots = ram_bytes // expert_bytes
 
@@ -220,7 +231,7 @@ def main() -> int:
         return list(ix.expert(*key).ranges)
 
     pf = Prefetcher(streamer, cache, predictor, ranges_for, tracker=tracker, depth=a.depth,
-                    batch_demand=not a.no_batch_demand)
+                    batch_demand=batch_demand)
     for r in warm_rows:
         predictor.observe(r.as_mapping())
 
@@ -258,7 +269,8 @@ def main() -> int:
                  floor_bytes=floor, workers=a.workers, pool_slots=pool_slots,
                  vram_slots=(vram.slots if vram is not None else 0), attn_ms=a.attn_ms, ffn_ms=a.ffn_ms,
                  drop_after_read=a.drop_after_read, cold=a.cold, inject=a.inject,
-                 batch_demand=not a.no_batch_demand,
+                 batch_demand=batch_demand,
+                 concurrency_gain=(cfg.concurrency_gain if cfg.concurrency_gain is not None else -1.0),
                  device=device, members=",".join(members),
                  residency_before=round(res0.fraction, 4))
 
@@ -393,7 +405,8 @@ def main() -> int:
         "config": {"ram_bytes": ram_bytes, "ram_slots": ram_slots, "depth": a.depth,
                    "workers": a.workers, "pool_slots": pool_slots, "attn_ms": a.attn_ms,
                    "ffn_ms": a.ffn_ms, "drop_after_read": a.drop_after_read, "cold": a.cold,
-                   "inject": a.inject, "batch_demand": not a.no_batch_demand,
+                   "inject": a.inject, "batch_demand": batch_demand,
+                   "concurrency_gain": cfg.concurrency_gain,
                    "vram_slots": vram.slots if vram is not None else 0,
                    "expert_bytes": expert_bytes, "experts_per_token":
                    ix.expert_used_count * len(ix.moe_layers)},
