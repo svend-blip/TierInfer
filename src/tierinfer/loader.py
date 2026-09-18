@@ -623,8 +623,10 @@ class LoaderServer:
         the mapped prefix and copies that.
         """
         data = source(a, b)
-        buf = (ctypes.c_char * len(data)).from_buffer_copy(data)
-        src0 = ctypes.addressof(buf)
+        # The bytes object's own buffer is the copy source: no second memcpy
+        # of a 9 MB slab in Python. ``data`` stays referenced until the loop
+        # ends, which is what keeps the address valid.
+        src0 = ctypes.cast(ctypes.c_char_p(data), ctypes.c_void_p).value
         cur = a
         end = b            # what this attempt asks for; shrinks on ENOENT, resets on progress
         t0 = time.perf_counter()
