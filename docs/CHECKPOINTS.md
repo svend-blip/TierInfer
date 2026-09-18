@@ -176,3 +176,12 @@ Raw artefacts of every run, including the discarded one's log lines, are in
   fixed from cold2).
 - **Next:** CP-6 routing capture from the 480B is running (`chain3`), CP-5
   GPU sweep queued behind it (`chain4`), replay arms behind that (`chain5`).
+
+### CP-3 addendum — llama.cpp's own recognition of the model
+
+From `tierinfer-trace`'s stderr (`raw/trace-prose.err`), which carries
+`llama_log`: `llama_model_loader: additional 5 GGUFs metadata loaded.`,
+`print_info: file type = Q4_K - Medium`, `file size = 270.13 GiB (4.83 BPW)`,
+`arch = qwen3moe`, `n_layer = 62`, `n_expert = 160`, `n_expert_used = 8`.
+Addendum §6 items 3–6 are therefore shown by the runtime itself, not only
+inferred from bytes read.
