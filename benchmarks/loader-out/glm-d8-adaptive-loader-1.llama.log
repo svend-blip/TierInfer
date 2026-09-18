@@ -1,0 +1,55 @@
+tierinfer-mmap: connected to /tmp/tierinfer-620379.sock for 1 file(s)
+0.00.139.660 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.224.022 W srv  llama_server: -----------------
+0.00.224.026 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.224.027 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.224.027 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.224.027 W srv  llama_server: -----------------
+0.00.225.411 I srv    load_model: loading model '/data/ai-data/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf'
+tierinfer-mmap: routing callback installed
+0.00.599.701 W load: special_eot_id is not in special_eog_ids - the tokenizer config may be incorrect
+0.00.599.712 W load: special_eom_id is not in special_eog_ids - the tokenizer config may be incorrect
+0.00.628.648 W model has unused tensor blk.46.attn_norm.weight (size = 16384 bytes) -- ignoring
+0.00.628.654 W model has unused tensor blk.46.attn_q.weight (size = 26738688 bytes) -- ignoring
+0.00.628.656 W model has unused tensor blk.46.attn_k.weight (size = 2228224 bytes) -- ignoring
+0.00.628.658 W model has unused tensor blk.46.attn_v.weight (size = 2883584 bytes) -- ignoring
+0.00.628.659 W model has unused tensor blk.46.attn_q.bias (size = 49152 bytes) -- ignoring
+0.00.628.661 W model has unused tensor blk.46.attn_k.bias (size = 4096 bytes) -- ignoring
+0.00.628.663 W model has unused tensor blk.46.attn_v.bias (size = 4096 bytes) -- ignoring
+0.00.628.664 W model has unused tensor blk.46.attn_output.weight (size = 26738688 bytes) -- ignoring
+0.00.628.669 W model has unused tensor blk.46.post_attention_norm.weight (size = 16384 bytes) -- ignoring
+0.00.628.671 W model has unused tensor blk.46.ffn_gate_inp.weight (size = 2097152 bytes) -- ignoring
+0.00.628.673 W model has unused tensor blk.46.exp_probs_b.bias (size = 512 bytes) -- ignoring
+0.00.628.674 W model has unused tensor blk.46.ffn_gate_exps.weight (size = 392167424 bytes) -- ignoring
+0.00.628.676 W model has unused tensor blk.46.ffn_down_exps.weight (size = 415236096 bytes) -- ignoring
+0.00.628.678 W model has unused tensor blk.46.ffn_up_exps.weight (size = 392167424 bytes) -- ignoring
+0.00.628.680 W model has unused tensor blk.46.ffn_gate_shexp.weight (size = 3063808 bytes) -- ignoring
+0.00.628.681 W model has unused tensor blk.46.ffn_down_shexp.weight (size = 3244032 bytes) -- ignoring
+0.00.628.683 W model has unused tensor blk.46.ffn_up_shexp.weight (size = 3063808 bytes) -- ignoring
+0.00.628.687 W model has unused tensor blk.46.nextn.eh_proj.weight (size = 17825792 bytes) -- ignoring
+0.00.628.689 W model has unused tensor blk.46.nextn.enorm.weight (size = 16384 bytes) -- ignoring
+0.00.628.690 W model has unused tensor blk.46.nextn.hnorm.weight (size = 16384 bytes) -- ignoring
+0.00.628.692 W model has unused tensor blk.46.nextn.embed_tokens.weight (size = 329777152 bytes) -- ignoring
+0.00.628.694 W model has unused tensor blk.46.nextn.shared_head_head.weight (size = 329777152 bytes) -- ignoring
+0.00.628.696 W model has unused tensor blk.46.nextn.shared_head_norm.weight (size = 16384 bytes) -- ignoring
+tierinfer-mmap: serving /data/ai-data/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf through userfaultfd (60630797344 bytes at 0x7538701db000)
+tierinfer-mmap: unmapped 9359360 bytes at 7538701db000 inside a served region; told the server
+tierinfer-mmap: unmapped 1947144192 bytes at 754619ef2000 inside a served region; told the server
+tierinfer-mmap: routing callback installed
+tierinfer-mmap: unmapped 9359360 bytes at 7538701db000 inside a served region; told the server
+tierinfer-mmap: unmapped 25432064 bytes at 75464c7bf000 inside a served region; told the server
+tierinfer-mmap: unmapped 8118272 bytes at 754650000000 inside a served region; told the server
+0.01.037.663 I cmn          init: llama threadpool init, n_threads = 32
+0.18.796.084 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.18.803.247 I srv  llama_server: model loaded
+0.18.803.253 I srv  llama_server: listening on http://127.0.0.1:8931
+0.18.994.982 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+0.18.995.004 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+2.34.189.784 I slot print_timing: id  3 | task 0 | prompt eval time =   43903.13 ms /   111 tokens (  395.52 ms per token,     2.53 tokens per second)
+2.34.189.791 I slot print_timing: id  3 | task 0 |        eval time =   91291.61 ms /    32 tokens ( 2944.89 ms per token,     0.34 tokens per second)
+2.34.189.791 I slot print_timing: id  3 | task 0 |       total time =  135194.74 ms /   143 tokens
+2.34.189.797 I slot print_timing: id  3 | task 0 |    graphs reused =         30
+2.34.190.966 I slot      release: id  3 | task 0 | stop processing: n_tokens = 142, truncated = 0
+2.34.191.025 I srv    operator(): operator(): cleaning up before exit...
+tierinfer-mmap: unmapped 58674290688 bytes at 753870ac8000 inside a served region; told the server
+tierinfer-mmap: unmapped 4096 bytes at 75468dfe3000 inside a served region; told the server

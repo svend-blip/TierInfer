@@ -1,0 +1,18 @@
+tierinfer: start the runtime with
+  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK=/tmp/tierinfer-620379.sock TIERINFER_FILES=/data/ai-data/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf
+tierinfer-loader: listening on /tmp/tierinfer-620379.sock; RAM tier 27.0 GB (2773 experts), 8 fault workers, prefetch depth 8
+tierinfer-loader: pid 620415: control channel open
+tierinfer-loader: pid 620415: eviction channel open
+tierinfer-loader: pid 620415: serving GLM-4.5-Air-Derestricted.IQ4_XS.gguf (56.47 GB at 0x7538701db000), 18329 regions
+tierinfer-loader: pid 620415: unmapped [0, 9359360) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (0.01 GB); 0 experts gone, 0 of them were resident
+tierinfer-loader: pid 620415: unmapped [58683650048, 60630794240) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (1.81 GB); 128 experts gone, 0 of them were resident
+tierinfer-loader: pid 620415: unmapped [0, 9359360) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (0.01 GB); 128 experts gone, 0 of them were resident
+tierinfer-loader: pid 620415: unmapped [59531739136, 59557171200) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (0.02 GB); 128 experts gone, 0 of them were resident
+tierinfer-loader: pid 620415: unmapped [59590725632, 59598843904) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (0.01 GB); 128 experts gone, 0 of them were resident
+tierinfer-loader: token 1: hit 0.0% (0/360) faults 19842 copied 9.0 GB evicted 0 prefetch 0/0/0/0 resident 734 (9.0 GB)
+tierinfer-loader: token 2: hit 6.7% (346/5134) faults 24452 copied 50.2 GB evicted 2595 prefetch 184/179/0/0 resident 2797 (27.0 GB)
+tierinfer-loader: token 3: hit 9.2% (507/5494) faults 30776 copied 53.7 GB evicted 2998 prefetch 384/195/6/0 resident 2791 (27.0 GB)
+tierinfer-loader: token 20: hit 41.9% (4870/11614) faults 91806 copied 69.3 GB evicted 4778 prefetch 402/299/70/96 resident 2766 (27.0 GB)
+tierinfer-loader: pid 620415: unmapped [9359360, 58683650048) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (54.64 GB); 5888 experts gone, 2393 of them were resident
+tierinfer-loader: pid 620415: unmapped [60630794240, 60630798336) of GLM-4.5-Air-Derestricted.IQ4_XS.gguf (0.00 GB); 5888 experts gone, 0 of them were resident
+tierinfer-loader: pid 620415: control channel closed
