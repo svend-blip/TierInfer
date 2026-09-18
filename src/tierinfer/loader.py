@@ -520,7 +520,7 @@ class LoaderServer:
 
     def __init__(self, index, *, ram_bytes: int, workers: int = 8, depth: int = 0,
                  telemetry: Telemetry | None = None, floor_chunk: int = 16 * MB,
-                 predictor: Predictor | None = None, verbose: bool = True,
+                 predictor: Predictor | None = None, verbose: bool = True, align: int = 0,
                  drop_page_cache: bool = True) -> None:
         self.source = as_source(index)
         self.index = index
@@ -531,7 +531,7 @@ class LoaderServer:
         self.floor_chunk = floor_chunk
         self.verbose = verbose
         self.tel = telemetry
-        self.backend = StorageBackend(self.source.files)
+        self.backend = StorageBackend(self.source.files, align=align)   # item 7: whole-stripe reads on md, measured
         self.layouts: dict[object, FileLayout] = {}
         self.mappings: list[Mapping] = []
         self.tracker = ExpertTracker(window=128)

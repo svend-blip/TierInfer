@@ -80,6 +80,10 @@ def main(argv: list[str] | None = None) -> int:
     srv.add_argument("--ram-gb", type=float, default=0.0, help="RAM tier in GiB (0 = autoconfig's share)")
     srv.add_argument("--workers", type=int, default=8)
     srv.add_argument("--depth", type=int, default=0, help="prefetch depth per layer (0 = off)")
+    srv.add_argument("--align", type=int, default=0,
+                     help="round every read outward to this many bytes (e.g. 524288 for md's 512 KiB chunk); 0 = exact")
+    srv.add_argument("--predictor", choices=("adaptive", "prerouter"), default="adaptive",
+                     help="what prefetch guesses with: the counting blend, or the online trainable prerouter")
     srv.add_argument("--telemetry", default=None, help="JSONL path")
     srv.add_argument("--keep-page-cache", action="store_true",
                      help="do not drop the page cache behind reads (double caching; for diagnosis)")
@@ -123,6 +127,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+def _predictor(name: str, layers, n_expert: int):
+    """None keeps the loader's default (the adaptive blend); the prerouter learns online from ROUTE."""
+    if name == "prerouter":
+        from .prerouter import Prerouter
+        return Prerouter(list(layers), int(n_expert))
+    return None
+
+
 def _serve(args) -> int:
     from .autoconfig import configure
     from .loader import LoaderServer
@@ -153,7 +165,8 @@ def _serve(args) -> int:
               f"  TIERINFER_SOCK={args.sock} (and --moe-cpu-layers for the tiered layers)", file=sys.stderr, flush=True)
         tel = Telemetry(args.telemetry) if args.telemetry else None
         server = LoaderServer(ftw, ram_bytes=ram, workers=workers, depth=depth, telemetry=tel,
-                              verbose=not args.quiet, drop_page_cache=not args.keep_page_cache)
+                              verbose=not args.quiet, drop_page_cache=not args.keep_page_cache,
+                              align=args.align, predictor=_predictor(args.predictor, ftw.moe_layers, ftw.expert_count))
         try:
             server.serve(args.sock)
         except KeyboardInterrupt:
@@ -185,7 +198,8 @@ def _serve(args) -> int:
           f"TIERINFER_FILES={files}", file=sys.stderr, flush=True)
     tel = Telemetry(args.telemetry) if args.telemetry else None
     server = LoaderServer(ix, ram_bytes=ram, workers=workers, depth=depth, telemetry=tel,
-                          verbose=not args.quiet, drop_page_cache=not args.keep_page_cache)
+                          verbose=not args.quiet, drop_page_cache=not args.keep_page_cache,
+                          align=args.align, predictor=_predictor(args.predictor, ix.moe_layers, ix.expert_count))
     try:
         server.serve(args.sock)
     except KeyboardInterrupt:

@@ -149,6 +149,7 @@ def main() -> int:
                     help="llama-server arguments for both arms (after --extra)")
     ap.add_argument("--native-memory-max", default=None, help="cgroup ceiling for the native arm, e.g. 32G")
     ap.add_argument("--loader-ram-gb", type=float, default=0.0, help="RAM tier for the loader arm (0 = autoconfig)")
+    ap.add_argument("--server-args", default="", help="more `tierinfer serve` arguments for the loader arm, e.g. '--align 524288 --depth 8'")
     ap.add_argument("--loader-depth", type=int, default=0)
     ap.add_argument("--loader-workers", type=int, default=8)
     ap.add_argument("--arms", default="native,loader")
@@ -185,6 +186,8 @@ def main() -> int:
                        "--workers", str(a.loader_workers), "--depth", str(a.loader_depth), "--telemetry", str(tel)]
                 if a.loader_ram_gb:
                     cmd += ["--ram-gb", str(a.loader_ram_gb)]
+                if a.server_args:
+                    cmd += a.server_args.split()
                 env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
                 server = subprocess.Popen(cmd, env=env, stdout=open(a.out / f"{label}.server.log", "w"),
                                           stderr=subprocess.STDOUT)
