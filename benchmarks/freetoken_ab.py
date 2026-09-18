@@ -166,8 +166,21 @@ def run_arm(label: str, arm: str, a, out: Path, device: str, members: list[str])
         load_s = _wait_health(a.port, ft, a.load_timeout)
         io_load = _snap(device, members)
         stats0 = _stats(a.port)
+        killer = None
+        if server is not None and a.kill_server_after > 0:
+            import threading
+
+            def _kill_server():
+                time.sleep(a.kill_server_after)
+                print(f"   injecting: SIGKILL tierinfer serve (pid {server.pid}) {a.kill_server_after:.1f} s into the completion", flush=True)
+                server.kill()
+
+            killer = threading.Thread(target=_kill_server, daemon=True)
+            killer.start()
         doc, wall = _complete(a.port, a.n_predict)
         stats1 = _stats(a.port)
+        if killer is not None:
+            killer.join(5)
         io1 = _snap(device, members)
     finally:
         _kill(ft, "ft serve", grace=30)
@@ -186,7 +199,8 @@ def run_arm(label: str, arm: str, a, out: Path, device: str, members: list[str])
            "text": text, "stats_before": stats0, "stats_after": stats1,
            "io_load": _delta(io0, io_load, members), "io_infer": _delta(io_load, io1, members),
            "arm": arm, "rep": label.rsplit("-", 1)[-1], "depth": a.depth if arm == "tiered" else None,
-           "tier_gb": a.tier_gb if arm == "tiered" else None, "cpu_layers": a.cpu_layers}
+           "tier_gb": a.tier_gb if arm == "tiered" else None, "cpu_layers": a.cpu_layers,
+           "killed_server_after_s": a.kill_server_after or None}
     if usage.get("completion_tokens"):
         res["gen_tps_wall"] = usage["completion_tokens"] / wall     # upper bound on decode time: includes prefill
     (out / f"{label}.json").write_text(json.dumps(res, indent=1))
@@ -212,6 +226,8 @@ def main() -> int:
     ap.add_argument("--load-timeout", type=float, default=1800)
     ap.add_argument("--label", default="flashnext")
     ap.add_argument("--out", type=Path, default=ROOT / "benchmarks" / "freetoken-out")
+    ap.add_argument("--kill-server-after", type=float, default=0.0,
+                    help="failure injection: SIGKILL `tierinfer serve` this many seconds into the completion (tiered arm)")
     ap.add_argument("--extra", nargs=argparse.REMAINDER, default=[], help="more ft serve args (after --extra)")
     a = ap.parse_args()
     if not FT.exists():
