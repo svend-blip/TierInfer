@@ -89,20 +89,28 @@ inferred from file access.
 
 | | prose prompt | code prompt |
 |---|--:|--:|
-| generated tokens (+ prompt) | 400 (+111) | _(running)_ |
-| capture rate | load 187 s, prompt 0.93 t/s, **gen 0.72 t/s** | |
-| experts per token | 496 = layout → 20.9 GB, 7.7 % of the file | |
-| distinct experts in 400 tokens | 7 121 of 9 920 (71.8 %); 2 799 never routed | |
-| activation skew | top 10 % of a layer's experts take **56 %** of its activations | |
-| neighbour-token overlap | 38.5 % | |
-| horizon W=8 / 32 / 128 | 62 GB / 115 GB / **173 GB** (23 / 43 / 64 % of the file) | |
+| generated tokens (+ prompt) | 400 (+111) | 400 (+151) |
+| capture rate | load 187 s, prompt 0.93 t/s, **gen 0.72 t/s** | load 168 s, prompt 1.12 t/s, **gen 0.39 t/s** |
+| experts per token | 496 = layout → 20.9 GB, 7.7 % of the file | 496 = layout |
+| distinct experts in 400 tokens | 7 121 of 9 920 (71.8 %); 2 799 never routed | 9 011 (90.8 %); 909 never routed |
+| activation skew | top 10 % of a layer's experts take **56 %** of its activations | **40 %** |
+| neighbour-token overlap | 38.5 % | 26.0 % |
+| horizon W=8 / 32 / 128 | 62 GB / 115 GB / **173 GB** (23 / 43 / 64 % of the file) | 73 GB / 147 GB / **221 GB** (27 / 54 / 82 %) |
 
 The horizon row explains §1's native numbers directly: 128 consecutive
-tokens need 173 GB, the page cache holds about 180 GB, so Linux already
-serves ~90 % of a token's 20.9 GB from RAM and reads 1.8 GB. Any RAM tier
-TierInfer runs with less than that is starting from behind; any advantage
-has to come from *what* is kept and *how* the misses are read, not from
-keeping more.
+prose tokens need 173 GB, the page cache holds about 180 GB, so Linux
+already serves ~90 % of a token's 20.9 GB from RAM and reads 1.8 GB. Any RAM
+tier TierInfer runs with less than that is starting from behind; any
+advantage has to come from *what* is kept and *how* the misses are read, not
+from keeping more.
+
+**The prompt class changes the workload by a factor of two.** Code routing
+is far less local: 91 % of all experts are touched within 400 tokens against
+72 %, neighbouring tokens share 26 % of their experts against 38 %, and 128
+tokens need 221 GB — more than the page cache — so the same runtime on the
+same storage generated at 0.39 t/s against 0.72. Addendum §16's warning
+that routing alters the workload is not hypothetical on this model; every
+comparison below is made within a prompt class.
 
 Hot/cold is measurable and strong — 56 % of a layer's activations land on
 its 16 most-used experts, and a quarter of all experts were never asked for
@@ -136,7 +144,16 @@ adjacent layers within the same token — is the strongest single signal here,
 and the adaptive blend tracks it to within a point without being told.
 Waste is the price: at k=16, two of three prefetched experts go unused.
 
-_(code prompt: pending)_
+| recall@k, code | frequency | persistence | transition | adaptive blend | adaptive waste |
+|---|--:|--:|--:|--:|--:|
+| k = 8 | 24.1 % | 27.1 % | 38.6 % | **38.8 %** | 61.2 % |
+| k = 16 | 37.6 % | 39.7 % | **56.6 %** | 55.6 % | 72.2 % |
+| k = 32 | 55.6 % | 44.1 % | **74.7 %** | 73.6 % | 81.6 % |
+
+Ten points lower across the board on code, in step with the weaker locality
+above; the ordering of the signals is the same. Prediction here is a
+statement about which experts to *have ready*; §4 measures what that buys
+against real reads.
 
 ## 6. Failure behaviour
 

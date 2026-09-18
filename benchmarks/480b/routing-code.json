@@ -1,0 +1,158 @@
+[
+ {
+  "trace": "traces/qwen3coder480b-code-400.jsonl",
+  "tokens_generated": 400,
+  "tokens_prompt": 151,
+  "layers": 62,
+  "experts_per_layer": 160,
+  "used_per_layer": 8,
+  "experts_per_token_layout": 496,
+  "experts_per_token_measured_median": 496.0,
+  "working_set_gb_layout": 20.92438507080078,
+  "working_set_gb_measured": 20.92438507080078,
+  "distinct_experts_seen": 9011,
+  "distinct_share": 0.9083669354838709,
+  "experts_never_routed": 909,
+  "top10pct_share_median": 0.40234375,
+  "top10pct_share_uniform_would_be": 0.1,
+  "neighbour_overlap_median": 0.2600806451612903,
+  "horizon": {
+   "1": {
+    "gb": 20.92438507080078,
+    "share_of_file": 0.07745803734270347
+   },
+   "2": {
+    "gb": 31.353843688964844,
+    "share_of_file": 0.11606588136662421
+   },
+   "4": {
+    "gb": 47.8529052734375,
+    "share_of_file": 0.17714222478151523
+   },
+   "8": {
+    "gb": 72.90070343017578,
+    "share_of_file": 0.2698643419865052
+   },
+   "16": {
+    "gb": 105.3004150390625,
+    "share_of_file": 0.38980182465098034
+   },
+   "32": {
+    "gb": 146.74753952026367,
+    "share_of_file": 0.5432310845766436
+   },
+   "64": {
+    "gb": 188.9070587158203,
+    "share_of_file": 0.6992974923181483
+   },
+   "128": {
+    "gb": 221.44924926757812,
+    "share_of_file": 0.8197624045457917
+   }
+  },
+  "predictors": {
+   "8": {
+    "frequency": {
+     "recall": 0.24125576036866359,
+     "wasted": 0.7587442396313364,
+     "tokens": 350,
+     "hits": 41882,
+     "used": 173600,
+     "predicted": 173600
+    },
+    "persistence": {
+     "recall": 0.27099654377880183,
+     "wasted": 0.7290034562211982,
+     "tokens": 350,
+     "hits": 47045,
+     "used": 173600,
+     "predicted": 173600
+    },
+    "transition": {
+     "recall": 0.3864170506912442,
+     "wasted": 0.6135829493087558,
+     "tokens": 350,
+     "hits": 67082,
+     "used": 173600,
+     "predicted": 173600
+    },
+    "adaptive": {
+     "recall": 0.3880990783410138,
+     "wasted": 0.6119009216589861,
+     "tokens": 350,
+     "hits": 67374,
+     "used": 173600,
+     "predicted": 173600
+    }
+   },
+   "16": {
+    "frequency": {
+     "recall": 0.3761347926267281,
+     "wasted": 0.8119326036866359,
+     "tokens": 350,
+     "hits": 65297,
+     "used": 173600,
+     "predicted": 347200
+    },
+    "persistence": {
+     "recall": 0.397073732718894,
+     "wasted": 0.7983595431994758,
+     "tokens": 350,
+     "hits": 68932,
+     "used": 173600,
+     "predicted": 341856
+    },
+    "transition": {
+     "recall": 0.5655875576036866,
+     "wasted": 0.7172029631677784,
+     "tokens": 350,
+     "hits": 98186,
+     "used": 173600,
+     "predicted": 347196
+    },
+    "adaptive": {
+     "recall": 0.5563248847926268,
+     "wasted": 0.7218375576036866,
+     "tokens": 350,
+     "hits": 96578,
+     "used": 173600,
+     "predicted": 347200
+    }
+   },
+   "32": {
+    "frequency": {
+     "recall": 0.5558870967741936,
+     "wasted": 0.8610282258064517,
+     "tokens": 350,
+     "hits": 96502,
+     "used": 173600,
+     "predicted": 694400
+    },
+    "persistence": {
+     "recall": 0.44126152073732716,
+     "wasted": 0.8131852856250975,
+     "tokens": 350,
+     "hits": 76603,
+     "used": 173600,
+     "predicted": 410048
+    },
+    "transition": {
+     "recall": 0.7465207373271889,
+     "wasted": 0.8133273411865027,
+     "tokens": 350,
+     "hits": 129596,
+     "used": 173600,
+     "predicted": 694242
+    },
+    "adaptive": {
+     "recall": 0.7364861751152074,
+     "wasted": 0.8158784562211981,
+     "tokens": 350,
+     "hits": 127854,
+     "used": 173600,
+     "predicted": 694400
+    }
+   }
+  }
+ }
+]

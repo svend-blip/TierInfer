@@ -185,3 +185,26 @@ From `tierinfer-trace`'s stderr (`raw/trace-prose.err`), which carries
 `arch = qwen3moe`, `n_layer = 62`, `n_expert = 160`, `n_expert_used = 8`.
 Addendum §6 items 3–6 are therefore shown by the runtime itself, not only
 inferred from bytes read.
+
+## CP-6a — expert activity observed from the running 480B (two traces)
+
+- **Revision:** the commit carrying this entry.
+- **Command:** `build/tierinfer-trace -m <shard 1> -ngl 99 --cpu-moe -t 32 -c 4096 -n 400 -f <prompt> -o traces/qwen3coder480b-<arm>-400.jsonl`
+  (llama.cpp b10482 via `libllama`, `cb_eval` on `ffn_moe_topk-<layer>`,
+  strided rows; `--cpu-moe` = the `-cmoe` buffer-type override).
+- **Result:** `traces/qwen3coder480b-prose-400.jsonl` and `-code-400.jsonl`,
+  24 862 routing lines each (62 layers × 401 decodes), read cleanly by the
+  strict reader; reports in `benchmarks/480b/routing-{prose,code}.json`,
+  table in `VALIDATION-480B.md` §3 and §5.
+- **Measured:** capture ran at 0.72 t/s (prose) and 0.39 t/s (code) with
+  attention on the GPU; a token uses all 496 layout experts (20.9 GB);
+  prose: 72 % of experts seen in 400 tokens, top-10 % share 56 %, neighbour
+  overlap 38.5 %, 128-token horizon 173 GB; code: 91 % seen, 40 %, 26 %,
+  221 GB. Predictors (heuristic, no prerouter): transition 66.8 % / 56.6 %
+  recall@16, frequency 51.9 % / 37.6 %.
+- **Addendum §13 items:** expert identification and range mapping (index,
+  per shard), activation observation (trace), frequency tracking and
+  hot/cold (report) — done. Residency / prefetch / eviction *decisions* are
+  measured in the replay arms (CP-6b/7/8).
+- **Unresolved:** none.
+- **Next:** CP-5 GPU sweep is running (`chain4`); replay arms queued.
