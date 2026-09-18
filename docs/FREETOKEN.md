@@ -51,6 +51,15 @@ then learns the routing and the token boundary as usual, and scores a hit as
 time would say nothing, everything routed is resident by then. Prefetch on
 routing works one step behind, which is what the predictor needs anyway.
 
+Two consequences for reading the telemetry. The runtime must drain its
+compute stream before reading the logs (the patch does), or the report
+describes the step before the one whose faults are being scored — the
+first two runs showed 100 % hits with 50 MB copied per token for exactly
+that reason. And a burst's first line is the token boundary, so token
+event *k* carries the faults, bytes and evictions of step *k* together with
+the hit/miss scoring of step *k−1*; each number is per step, the pairing
+is shifted by one. Medians over a run are unaffected.
+
 ## What to expect, and what is measured
 
 - **Decode** faults per routed expert of the tiered layers; misses cost one
