@@ -1,0 +1,8 @@
+engine llama.cpp+TierInfer
+endpoint http://127.0.0.1:8933
+model /data/ai-data/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf
+startup_seconds 21.4
+completion  how to measure whether it help
+We are designing an expert cache for a sparse mixture-of-experts (MoE) model where the weights are stored on NV
+timings {"cache_n":0,"predicted_ms":79669.773,"predicted_n":32,"predicted_per_second":0.38910616702773837,"predicted_per_token_ms":2569.992677419355,"prompt_ms":32724.354,"prompt_n":38,"prompt_per_second":1.1612146721062853,"prompt_per_token_ms":861.1672105263158}
+telemetry {"engine":"llama.cpp+TierInfer","loader.bytes_copied":68379967488,"loader.coalesced_experts":22,"loader.coalesced_reads":33,"loader.copy_eagain":0,"loader.copy_seconds":11.969586231873109,"loader.evict_bytes":37934931968,"loader.evictions":3994,"loader.faults":114282,"loader.faults_duplicate":5368,"loader.faults_expert":105983,"loader.faults_floor":8299,"loader.faults_repaired":0,"loader.faults_resident":102037,"loader.forgotten":0,"loader.hits":7834,"loader.misses":6181,"loader.prefetch_class_background_hot":0,"loader.prefetch_class_high_confidence_next":8,"loader.prefetch_class_probable_next":263,"loader.prefetch_class_required_now":0,"loader.prefetch_dropped_full":0,"loader.prefetch_enqueued":271,"loader.prefetch_issued":271,"loader.prefetch_late":126,"loader.prefetch_served":271,"loader.prefetch_superseded":0,"loader.prefetch_useful":170,"loader.prefetch_wasted":93,"loader.read_retries":0,"loader.read_seconds":74.03708418416136,"loader.repeat_faults":0,"loader.resident":2910,"loader.resident_bytes":30328225792,"loader.routed":14015,"loader.tokens":30,"loader.unmapped_bytes":1992982528,"loader.unmapped_pages":0,"loader.unmaps":5}

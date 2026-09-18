@@ -1,0 +1,10 @@
+{
+  "tierinfer_cli": "/home/svend/TierInfer/bin/tierinfer",
+  "llama_server": "/home/svend/llama.cpp-qwen38/build/bin/llama-server",
+  "shim": "/home/svend/TierInfer/build/libtierinfer_mmap.so",
+  "capability": "/tmp/claude-1000/-home-svend-DPMtF-WebUI/ae95e412-4516-40b3-8970-4d2d7ebbba2b/scratchpad/flow/cap-glm.json",
+  "model_path": "/data/ai-data/models/GLM-4.5-Air-Derestricted-IQ4_XS/GLM-4.5-Air-Derestricted.IQ4_XS.gguf",
+  "llama_args": ["-ngl", "0", "-c", "4096", "-t", "32", "--no-warmup", "-fa", "off"],
+  "telemetry": "/tmp/claude-1000/-home-svend-DPMtF-WebUI/ae95e412-4516-40b3-8970-4d2d7ebbba2b/scratchpad/flow/glm-engine.telemetry.jsonl",
+  "port": 8933
+}

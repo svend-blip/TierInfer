@@ -1,0 +1,1 @@
+{"version": 1, "capability": "tierinfer.residency", "model": "GLM-4.5-Air-Derestricted.IQ4_XS.gguf", "context_length": 4096, "min_resident_share": 0.4, "ram_share": 0.18}

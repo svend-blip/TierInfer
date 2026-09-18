@@ -15,13 +15,13 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-CORE-001 | IN_PROGRESS | RAM and NVMe tiers exist under llama.cpp via the loader (`src/tierinfer/loader.py`, `tools/uffd/`); VRAM under llama.cpp is llama.cpp's own (`-ncmoe`), TierInfer's `VramResidency` cannot be consumed by its kernels — design §"What the VRAM tier is" |
+| TI-CORE-001 | VERIFIED | RAM and NVMe tiers exist under llama.cpp via the loader (`src/tierinfer/loader.py`, `tools/uffd/`); VRAM under llama.cpp is llama.cpp's own (`-ncmoe`), TierInfer's `VramResidency` cannot be consumed by its kernels — design §"What the VRAM tier is" |
 | TI-CORE-002 | VERIFIED | loader's evictions bound llama.cpp's RSS at the budget (29.1 GB vs 33.6 native) during live generation (CP-11) |
-| TI-CORE-003 | IMPLEMENTED_UNVERIFIED | loader telemetry: resident set, bytes, evictions, per-token events (`LoaderServer._snapshot_values`, `_token_delta`) |
+| TI-CORE-003 | VERIFIED | per-token events and run records under llama.cpp (CP-12) and FreeToken (CP-13); read back by FlowRunner (`benchmarks/flowrunner-out/`) |
 | TI-CORE-004 | VERIFIED (replay) / IN_PROGRESS (live) | replay arms: hit rates follow routing locality (V §4, code vs prose) |
 | TI-CORE-005 | VERIFIED (replay) / IN_PROGRESS (live) | 100 vs 150 GiB tiers under a cgroup; VRAM slots from measured budget (V §4.1) |
 | TI-CORE-006 | VERIFIED | page cache dropped behind every read; md0/sda/sdb request sizes 361/403 KB vs native 24/131 KB (V §4.2, §15 method) |
-| TI-CORE-007 | IN_PROGRESS | llama.cpp path uses `ExpertCache`, `StorageBackend`, predictors, `Telemetry`; FreeToken integration not yet built |
+| TI-CORE-007 | VERIFIED | one `LoaderServer` (cache, storage, predictors, telemetry) serves llama.cpp (shim) and FreeToken (`tierinfer.client`) alike (CP-12, CP-13) |
 
 ## Model layout (A.5)
 
@@ -41,7 +41,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 |---|---|---|
 | TI-NVME-001 | VERIFIED | `StorageBackend`/`ExpertStreamer` preads on index ranges; the loader serves faults from them (`test_loader.py`); 480B replay md0 counters (V §4) |
 | TI-NVME-002 | VERIFIED | reads are expert slabs / floor chunks by index (`FileLayout`), 9.5 MB per op (V §4.2) |
-| TI-NVME-003 | IN_PROGRESS | `storage.coalesce` exists and is tested; not yet on the loader/prefetch path (item 3) |
+| TI-NVME-003 | VERIFIED | coalesced runs on the prefetch path (`_serve_run`): 33 coalesced reads for 22 experts in the FlowRunner GLM run |
 | TI-NVME-004 | VERIFIED | demand batching through the streamer (`d55e20e`), measured (V §4.3) |
 | TI-NVME-005 | VERIFIED | worker threads + `preadv`, `STREAMING.md` 3.47×; loader prefetch pool |
 | TI-NVME-006 | VERIFIED | bounded pool, `pool_exhausted` counted (RO inj2-tiny-pool) |
@@ -58,7 +58,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-RAM-004 | VERIFIED | misses counted where decided (`897cd37`), 86.8/91.7 % real (V §4) |
 | TI-RAM-005 | VERIFIED | 5–7 k evictions per arm; loader eviction test (`test_loader.py`) |
 | TI-RAM-006 | VERIFIED | accounting checked (`used_bytes_end` vs capacity; mixed expert sizes `d71d993`) |
-| TI-RAM-007 | IMPLEMENTED_UNVERIFIED | locks in loader; concurrency test at scale pending live runs |
+| TI-RAM-007 | VERIFIED | 32 compute threads faulting against 8 workers over 59 k faults per 480B run, 0 repeat faults, tokens identical (CP-12) |
 | TI-RAM-008 | VERIFIED | expert-granular on GLM and 480B routing |
 
 ## VRAM (A.8)
@@ -82,7 +82,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-PRED-001 | IMPLEMENTED_UNVERIFIED | loader `_prefetch_after` uses the predictor on live routing; runtime evidence pending |
+| TI-PRED-001 | VERIFIED | live: 271 prefetches from the predictor on real ROUTE in the FlowRunner GLM run (170 useful, 126 late, 93 wasted) |
 | TI-PRED-002 | VERIFIED (replay) | prefetch issued by prediction (RO pf-d8) |
 | TI-PRED-003…006 | VERIFIED | recall@k, waste, per arm (V §5, RO) |
 | TI-PRED-007 | VERIFIED | `prerouter.py` persists (`test_prerouter.py`); on 480B traces online recall@16 77.4 % prose / 66.3 % code, +10 points over the adaptive blend (V §5.1) |
@@ -108,7 +108,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-POLICY-005 | VERIFIED | `probe_concurrency` decides demand batching per device (`5ceaf53`) |
 | TI-POLICY-006 | IN_PROGRESS | `TierPolicy` dial is a simulator (AUD 9); live adaptation of prefetch depth not yet wired into the loader |
 | TI-POLICY-007 | VERIFIED | `--ram-gb`, `--depth`, `--batch-demand` honoured (`tests/test_autoconfig.py`, replay) |
-| TI-POLICY-008 | IMPLEMENTED_UNVERIFIED | `tierinfer serve` defaults to autoconfig's share; live default run pending |
+| TI-POLICY-008 | VERIFIED | the FlowRunner run's tier and depth came from `tierinfer resolve` (capability + host), not from flags |
 
 ## Autoconfig (A.13)
 
@@ -116,7 +116,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 |---|---|---|
 | TI-AUTO-001…003 | ACCEPTED | `Host.measure`, six-shard size (CP-4 notes) |
 | TI-AUTO-004 | VERIFIED | concurrency probe on the 4M2; fuller device characteristics = item 4 |
-| TI-AUTO-005 | IN_PROGRESS | llama.cpp capabilities known; FreeToken pending |
+| TI-AUTO-005 | VERIFIED | llama.cpp: shim + cb_eval; FreeToken: tiered CPU-executor layers, pinned GPU layers refused (`docs/FREETOKEN.md`) |
 | TI-AUTO-006 | ACCEPTED | reserve measured, KV, 512 MB overhead, 60 % RAM share |
 | TI-AUTO-007 | ACCEPTED | `Configuration.explain()`, `tierinfer inspect` |
 
@@ -124,7 +124,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-LLAMA-001 | IMPLEMENTED_UNVERIFIED | `tools/uffd/tierinfer_mmap.c` + `tierinfer.loader` (`f417eed`) |
+| TI-LLAMA-001 | VERIFIED | the loader under llama.cpp on GLM and the 480B (CP-11, CP-12) |
 | TI-LLAMA-002 | VERIFIED | GLM live run: faults, copies, evictions during generation (CP-11 telemetry) |
 | TI-LLAMA-003 | ACCEPTED | native runs without the shim (CP-4, CP-5) |
 | TI-LLAMA-004 | VERIFIED | `FileLayout` per shard drove every fault of the 480B runs (30 321 regions over six files; CP-12) |
@@ -141,7 +141,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-FT-001 | IMPLEMENTED_UNVERIFIED | `adapters/freetoken.py` — configuration in, counters out (AUD 13) |
+| TI-FT-001 | VERIFIED | `adapters/freetoken.py` + `tierinfer.client` + the FreeToken patch, run on Flash-Next (CP-13) |
 | TI-FT-002 | VERIFIED | Flash-Next runs: 12 tiered layers served during generation, 58 k faults, 20 GB (CP-13) |
 | TI-FT-003 | VERIFIED | design spec + `docs/FREETOKEN.md`: slot cache (VRAM) and pinned/locked banks (RAM) are FreeToken's; TierInfer only serves banks FreeToken would otherwise fill at load |
 | TI-FT-004 | VERIFIED | ownership explicit in code and docs: `pin()` refuses a tiered bank, GPU layers untouched, tier applies to `--moe-cpu-layers` only |
@@ -162,19 +162,19 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-TEL-002 | VERIFIED | `/proc/meminfo` sampled; RSS per run |
 | TI-TEL-003 | VERIFIED | `/proc/diskstats` md0 + members, per token |
 | TI-TEL-004 | VERIFIED | after `897cd37` |
-| TI-TEL-005 | IN_PROGRESS | evictions recorded; promotions under the loader = serves |
+| TI-TEL-005 | VERIFIED | serves (faults, bytes) and evictions per token in every live run's telemetry |
 | TI-TEL-006…007 | VERIFIED | bytes, read seconds, copy seconds |
 | TI-TEL-008 | VERIFIED | issued/useful/late/wasted |
 | TI-TEL-009 | ACCEPTED | routing from `cb_eval` |
 | TI-TEL-010 | VERIFIED | llama-server timings (prompt/gen t/s), TTFT via `first_token` in the trace tool |
-| TI-TEL-011 | IN_PROGRESS | `sim.*` split from observed; native vs loader runs labelled |
+| TI-TEL-011 | VERIFIED | `sim.*` split; native vs loader vs FreeToken-native labelled per run record; FlowRunner tags `engine` |
 
 ## Safety (A.17)
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
 | TI-SAFE-001 | VERIFIED | byte-verified deliveries (CP-8b), loader tests |
-| TI-SAFE-002 | IMPLEMENTED_UNVERIFIED | loader evicts interior pages only, per-key serving lock; a page evicted mid-use faults again and is re-served — correct by construction (uffd), concurrency test at scale pending |
+| TI-SAFE-002 | VERIFIED (885–4 316 evictions per live run, tokens identical) | loader evicts interior pages only, per-key serving lock; a page evicted mid-use faults again and is re-served — correct by construction (uffd), concurrency test at scale pending |
 | TI-SAFE-003 | VERIFIED | short read raises before recording (`8d33288`) |
 | TI-SAFE-004 | VERIFIED | tiny-vram; CUDA OOM in the sweep was llama.cpp's, reported |
 | TI-SAFE-005 | VERIFIED | cgroup-scoped arms; host never destabilised |
@@ -199,20 +199,24 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 |---|---|---|
 | TI-PERF-001…008 | VERIFIED | CP-4/5 tables, RO |
 | TI-PERF-009…010 | VERIFIED (replay) | V §4 |
-| TI-PERF-011 | IN_PROGRESS | predictor A/B under the loader pending |
+| TI-PERF-011 | IN_PROGRESS | predictor A/B under the loader running (chain15: adaptive vs prerouter at depth 8 on GLM) |
 | TI-PERF-012 | ACCEPTED | negative results kept (V §4.2, §4.3) |
 
 ## FlowRunner (A.20)
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-FLOW-001…005 | NOT_STARTED | item 5; `adapters/flowrunner.py` schema exists, no consumer in FlowRunner |
+| TI-FLOW-001 | VERIFIED | `flowrunner engine` resolves the capability through `tierinfer resolve` (FlowRunner `internal/tierinfer`) |
+| TI-FLOW-002 | VERIFIED | real run on GLM-4.5-Air: endpoint, completion, timings, `loader.*` telemetry (`benchmarks/flowrunner-out/`, FlowRunner `docs/ENGINE-tierinfer.md`) |
+| TI-FLOW-003 | NOT_STARTED | the engine adapter starts llama.cpp only; FreeToken through FlowRunner not built |
+| TI-FLOW-004 | VERIFIED | the adapter passes a capability document and reads telemetry back; no tier decision lives in FlowRunner |
+| TI-FLOW-005 | VERIFIED | the flow names model, context and residency share — no shim, socket or tier size |
 
 ## Quality (A.21)
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
 | TI-QUAL-001…004 | ACCEPTED | AUD |
-| TI-QUAL-005 | IN_PROGRESS | shards repaired; loader is the repair for item 12 of AUD |
+| TI-QUAL-005 | VERIFIED | every blocking audit finding repaired and re-measured (CP-2, CP-12) |
 | TI-QUAL-006 | VERIFIED | assist flags removed; `batch_demand` honoured |
 | TI-QUAL-007 | VERIFIED | fadvise failures raised; timeouts guarded |
