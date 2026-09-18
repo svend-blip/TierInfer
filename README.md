@@ -37,16 +37,21 @@ to need.
 
 ## Status
 
-**Real, measured components — and no spine yet.** Every mechanism between
+**Real, measured components, and now the spine.** Every mechanism between
 the GGUF directory and the GPU exists, is tested against real files and a
 real card, and has numbers behind it; `python tools/smoketest.py` exercises
 each against the real model, the real NVMe and the real GPU in about ten
-seconds. What does not exist is the loader that would put any of them under
-a running model: in every inference this project has run, all weight I/O was
-Linux demand paging. `docs/AUDIT-2026-09-18.md` is the component-by-component
-account, and `SCOPE.md` carries the corrected status per goal (6 and 10 are
-not complete; 8, 11 and 12 are partial). Everything below is a measurement on
-the reference model, not a plan.
+seconds. Since 2026-09-18 they also sit under a running model: the loader
+(`docs/LOADER.md`) is a preloaded shim that turns llama.cpp's file mappings
+into userfaultfd regions the TierInfer server answers per expert, with no
+change to llama.cpp. On Qwen3-Coder-480B-A35B Q4_K_M from a USB RAID0 it
+generates **0.647 t/s against native's 0.467** (three cold runs each, greedy
+tokens identical in all six, 36 % fewer bytes in 5× fewer reads; CP-12 in
+`docs/CHECKPOINTS.md`). The same server serves FreeToken's expert banks to
+its CPU-executor layers through a Python client (`docs/FREETOKEN.md`).
+`docs/AUDIT-2026-09-18.md` is the component-by-component account,
+`docs/ACCEPTANCE-STATUS.md` the live status per acceptance criterion.
+Everything below is a measurement on the reference model, not a plan.
 
 | | |
 |---|---|
@@ -132,21 +137,20 @@ Reproduce it with `python benchmarks/read_paths.py <model.gguf>`. Cold modes
 evict their own ranges from the page cache first — `posix_fadvise` needs no
 privileges, so no cache has to be dropped system-wide to get an honest number.
 
-## What is not built yet
+## What is not measured yet
 
-**The llama.cpp loader** — the piece that would make llama.cpp take its
-expert weights from TierInfer's buffers instead of from its own memory map.
-Without it the RAM cache, the VRAM working set, the prefetcher and the policy
-are measured under *replayed* real routing, not under a running model, and
-"llama.cpp + TierInfer" has no tokens-per-second. Also absent: a trainable
-prerouter, prefetch priority classes, coalescing in the prefetch path, a
-FlowRunner-side consumer of the capability, and an NVMe tier beneath
-FreeToken. The advisory route was tried first and measured to do nothing
-(`benchmarks/REAL-ROUTING.md`): a live mapping keeps its pages whatever
-`posix_fadvise` is told.
+Prefetch depth above zero under the loader (the 480B A/B ran at depth 0;
+the classes and coalescing are built and unit-tested), the trainable
+prerouter's recall on the 480B traces, stripe-aligned reads on md, a
+TierInfer VRAM tier under llama.cpp (llama.cpp's own `-ncmoe` owns the card;
+a TierInfer VRAM tier there needs a llama.cpp patch, documented and not
+attempted), and FlowRunner's end-to-end run with real binaries (the engine
+adapter exists on the FlowRunner side). The advisory route was tried first
+and measured to do nothing (`benchmarks/REAL-ROUTING.md`): a live mapping
+keeps its pages whatever `posix_fadvise` is told.
 
-`SCOPE.md` carries the full plan, its order, and what each goal has measured
-so far.
+`SCOPE.md`, `docs/DEFINITION-OF-DONE.md` and `docs/ACCEPTANCE-MATRIX.md`
+carry the plan, the bar, and what each criterion has measured so far.
 
 ## The 480B validation (2026-09-18)
 
@@ -158,8 +162,9 @@ the device half idle; TierInfer's RAM tier under the same routing reads
 **36–65 % fewer bytes in 20–40× fewer operations with less RAM**; prefetch
 and prediction add nothing measurable; the VRAM tier catches a fifth of the
 traffic; 18 000 delivered experts under injected failures matched the file
-byte for byte; and none of it runs under a model yet, because the loader is
-still the missing piece.
+byte for byte; and, once the loader existed, llama.cpp with TierInfer
+generated 39 % faster than native on the same flags with identical tokens
+(§4.4).
 
 ## Why this is worth doing
 
