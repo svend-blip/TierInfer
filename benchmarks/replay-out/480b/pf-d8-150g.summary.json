@@ -1,0 +1,119 @@
+{
+ "label": "pf-d8-150g",
+ "model": "/data/ai-data/models/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M/Q4_K_M/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00006.gguf",
+ "trace": "traces/qwen3coder480b-prose-400.jsonl",
+ "tokens_replayed": 150,
+ "predictor_warmup": 50,
+ "run_seconds": 272.26337505000083,
+ "fatal": null,
+ "config": {
+  "ram_bytes": 161061273600,
+  "ram_slots": 5263,
+  "depth": 8,
+  "workers": 8,
+  "pool_slots": 48,
+  "attn_ms": 0.0,
+  "ffn_ms": 0.0,
+  "drop_after_read": true,
+  "cold": true,
+  "inject": "none",
+  "vram_slots": 0,
+  "expert_bytes": 30597120,
+  "experts_per_token": 496
+ },
+ "per_token": {
+  "wall_ms_median": 1147.1432249991267,
+  "wall_ms_min": 101.01091300020926,
+  "wall_ms_max": 20419.145426001705,
+  "wait_ms_median": 1033.1797655035189,
+  "dev_bytes_median": 676464640.0,
+  "dev_reads_median": 1825.5,
+  "stream_bytes_median": 0.0
+ },
+ "prefetch": {
+  "issued": 888,
+  "used": 295,
+  "useful": 140,
+  "late": 155,
+  "late_wait_seconds": 2.3147006630024407,
+  "cancelled": 593,
+  "stalls": 5978,
+  "stalls_avoided": 68422,
+  "accuracy": 0.3322072072072072,
+  "mean_lead_seconds": 0.0003579047389841003,
+  "wasted_bytes": 17341194240,
+  "pool_exhausted": 111,
+  "exact_fallbacks": 5978,
+  "timed_out": 0,
+  "orphans_at_end": 0
+ },
+ "cache": {
+  "hits": 68127,
+  "misses": 6273,
+  "hit_rate": 0.9156854838709677,
+  "insertions": 6273,
+  "evictions": 647,
+  "bytes_admitted": 179600302080,
+  "bytes_evicted": 18547384320,
+  "resident_end": 5626,
+  "used_bytes_end": 161052917760,
+  "heap_fallbacks": 572
+ },
+ "stream": {
+  "submitted": 888,
+  "completed": 887,
+  "failed": 0,
+  "cancelled": 1,
+  "bytes_read": 25850142720,
+  "bytes_per_second": 896397461.5376674,
+  "mean_read_ms": 32.51162727284315,
+  "mean_queue_ms": 0.49854875086225164
+ },
+ "storage": {
+  "reads": 5978,
+  "operations": 17934,
+  "bytes_read": 171060756480,
+  "size_histogram": {
+   "16777216": 17934
+  },
+  "injected_failures": 0
+ },
+ "vram": null,
+ "device": {
+  "name": "md0",
+  "reads": 481907,
+  "bytes": 180033175552,
+  "mean_read_bytes": 373584.8940812231,
+  "await_ms": 1.7113613207527594,
+  "bandwidth_gbps": 0.615833076975746,
+  "iops": 1770.0012549428852,
+  "members": {
+   "sda": {
+    "reads": 218299,
+    "bytes": 90016628736,
+    "mean_read_bytes": 412354.7461784067,
+    "await_ms": 1.7184366396547854
+   },
+   "sdb": {
+    "reads": 218158,
+    "bytes": 90016546816,
+    "mean_read_bytes": 412620.8840198388,
+    "await_ms": 1.7020737263817967
+   }
+  }
+ },
+ "residency": {
+  "before": 0.0,
+  "after": 0.0017580984971505742
+ },
+ "verification": {
+  "verified": 0,
+  "mismatches": 0
+ },
+ "predictor": "adaptive",
+ "adaptive_weights": {
+  "frequency": 0.23174225741363502,
+  "persistence": 0.19965427281307577,
+  "transition": 0.5686034697732892
+ }
+}

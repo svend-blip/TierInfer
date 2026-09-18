@@ -1,0 +1,21 @@
+cold: residency after drop 0.00%
+vram: 792 slots of 29.2 MB = 22.6 GB (budget left 29.4 GB after KV 0.97 GB at 4096, reserve 0.51 GB measured)
+replay pf-d8-100g-vram: 150 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 100.0 GB = 3509 experts (35.4% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    21830 ms  wait  19276  stalls 484 late   3 useful   9  cache   0/496  dev 14.54 GB  41535 reads @  367 KB  vram 0/496
+  token    1     8477 ms  wait   7481  stalls 186 late   0 useful   3  cache 307/496  dev  5.94 GB  16959 reads @  367 KB  vram 307/496
+  token    2     6680 ms  wait   5873  stalls 141 late   6 useful   5  cache 344/496  dev  4.57 GB  13053 reads @  367 KB  vram 344/496
+  token   24     2923 ms  wait   1719  stalls  47 late   0 useful   0  cache 449/496  dev  1.25 GB   3629 reads @  361 KB  vram 118/496
+  token   49     2483 ms  wait   1268  stalls  31 late   7 useful   0  cache 458/496  dev  0.93 GB   2678 reads @  362 KB  vram 131/496
+  token   74     2688 ms  wait   1394  stalls  27 late  17 useful   5  cache 447/496  dev  1.32 GB   3809 reads @  364 KB  vram 116/496
+  token   99     6615 ms  wait   4877  stalls 158 late   5 useful   6  cache 327/496  dev  5.13 GB  14758 reads @  365 KB  vram 69/496
+  token  124     4184 ms  wait   2630  stalls  89 late   7 useful   3  cache 397/496  dev  2.93 GB   8569 reads @  358 KB  vram 80/496
+  token  149     2900 ms  wait   1448  stalls  36 late  15 useful   6  cache 439/496  dev  1.84 GB   5419 reads @  356 KB  vram 93/496
+
+pf-d8-100g-vram: 150 tokens in 556 s, median 3147 ms/token (min 1467, max 21830)
+  cache hit rate 84.7% (63038/74400), 7622 evictions, 3740 resident at end
+  prefetch issued 6219, useful 559, late 1673, wasted 3987 (106.9 GB), stalls 9130, accuracy 35.9%, pool exhausted 132, timed out 0
+  stream 166.7 GB at 1.40 GB/s, 0 failed reads, storage ops 27390
+  md0: 305.5 GB in 884872 reads @ 362 KB, await 1.83 ms, 0.55 GB/s; sda: 152.7 GB in 397004 @ 403 KB; sdb: 152.8 GB in 397766 @ 403 KB
+  per token: median 1.67 GB from md0 in 4862 reads
+  vram: 22.1% hit (16477/74400), 57923 transfers, 1516.4 GB at 26.5 GB/s
+  verified 0 deliveries against exact reads, 0 mismatches; residency 0.0% -> 1.0%

@@ -1,0 +1,13 @@
+missing-range: expert (0, 93) will not resolve; token 1 routes to it
+replay inj3-missing-range: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    18447 ms  wait  13758  stalls 463 late  10 useful  23  cache   0/496  dev 10.71 GB  30372 reads @  370 KB
+FATAL: explicit failure: injected: expert (0, 93) cannot be resolved to byte ranges
+
+inj3-missing-range: 1 tokens in 18 s, median 18447 ms/token (min 18447, max 18447)
+  cache hit rate 0.0% (0/497), 0 evictions, 496 resident at end
+  prefetch issued 82, useful 23, late 10, wasted 49 (1.4 GB), stalls 464, accuracy 40.2%, pool exhausted 53, timed out 0
+  stream 2.3 GB at 0.44 GB/s, 0 failed reads, storage ops 2877
+  md0: 10.7 GB in 30372 reads @ 370 KB, await 2.18 ms, 0.58 GB/s; sda: 5.4 GB in 13856 @ 405 KB; sdb: 5.4 GB in 13878 @ 405 KB
+  per token: median 10.71 GB from md0 in 30372 reads
+  verified 496 deliveries against exact reads, 0 mismatches; residency 27.7% -> 26.8%
+  ENDED EARLY: explicit failure: injected: expert (0, 93) cannot be resolved to byte ranges

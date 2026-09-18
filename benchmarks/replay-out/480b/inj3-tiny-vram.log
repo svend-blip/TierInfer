@@ -1,0 +1,2 @@
+vram: 8 slots of 29.2 MB = 0.2 GB (budget left 29.4 GB after KV 0.97 GB at 4096, reserve 0.51 GB measured)
+replay inj3-tiny-vram: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']

@@ -404,7 +404,7 @@ def main() -> int:
                      "accuracy": pf.stats.accuracy, "mean_lead_seconds": pf.stats.mean_lead_seconds,
                      "wasted_bytes": pf.stats.wasted_bytes, "pool_exhausted": pf.stats.pool_exhausted,
                      "exact_fallbacks": pf.stats.exact_fallbacks, "timed_out": pf.stats.timed_out,
-                     "orphans_at_end": pf.orphans},
+                     "unmappable": pf.stats.unmappable, "orphans_at_end": pf.orphans},
         "cache": {"hits": cache.stats.hits, "misses": cache.stats.misses,
                   "hit_rate": cache.stats.hit_rate, "insertions": cache.stats.insertions,
                   "evictions": cache.stats.evictions, "bytes_admitted": cache.stats.bytes_admitted,
