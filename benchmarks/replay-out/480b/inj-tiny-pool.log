@@ -1,0 +1,4 @@
+replay inj-tiny-pool: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 2; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    21238 ms  wait  16095  stalls 496 late   0 useful   0  cache   0/496  dev 13.16 GB  37458 reads @  368 KB
+  token    1    17694 ms  wait   7763  stalls 247 late   0 useful   0  cache 249/496  dev 13.16 GB  37322 reads @  370 KB
+  token    2    17500 ms  wait   7220  stalls 232 late   0 useful   0  cache 264/496  dev 13.16 GB  37617 reads @  367 KB

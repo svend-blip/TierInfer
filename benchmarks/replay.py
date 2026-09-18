@@ -127,6 +127,11 @@ def main() -> int:
     ap.add_argument("--label", required=True)
     ap.add_argument("--out", type=Path, default=Path("benchmarks/replay-out"))
     ap.add_argument("--tokens", type=int, default=0, help="generated tokens to replay (0 = all)")
+    ap.add_argument("--predictor-warmup", type=int, default=0,
+                    help="show the predictor this many leading tokens of the trace (routing only, "
+                         "no I/O) before replaying the next --tokens; with fewer than ~20 tokens of "
+                         "history every prediction names an expert the last token just loaded, so "
+                         "nothing speculative is ever issued and no injection on that path can fire")
     ap.add_argument("--ram-gb", type=float, default=0.0,
                     help="RAM expert cache in GiB (0 = autoconfig's share)")
     ap.add_argument("--depth", type=int, default=0, help="prefetch depth per layer (0 = cache mode)")
@@ -163,7 +168,9 @@ def main() -> int:
     ram_bytes = int(a.ram_gb * GB) if a.ram_gb > 0 else cfg.ram_bytes
     ram_slots = ram_bytes // expert_bytes
 
-    rows = read_trace(a.trace, prompt=False)
+    rows_all = read_trace(a.trace, prompt=False)
+    warm_rows = rows_all[:a.predictor_warmup]
+    rows = rows_all[a.predictor_warmup:]
     if a.tokens > 0:
         rows = rows[:a.tokens]
     if not rows:
@@ -201,6 +208,8 @@ def main() -> int:
         return list(ix.expert(*key).ranges)
 
     pf = Prefetcher(streamer, cache, predictor, ranges_for, tracker=tracker, depth=a.depth)
+    for r in warm_rows:
+        predictor.observe(r.as_mapping())
 
     vram = None
     staging = 0
@@ -228,6 +237,7 @@ def main() -> int:
 
     tel = Telemetry(stem.with_suffix(".telemetry.jsonl"), run=a.label)
     tel.open_run(model=str(a.model), trace=str(a.trace), tokens=len(rows), depth=a.depth,
+                 predictor_warmup=len(warm_rows), first_token_index=len(warm_rows),
                  ram_bytes=ram_bytes, ram_slots=ram_slots, expert_bytes=expert_bytes,
                  floor_bytes=floor, workers=a.workers, pool_slots=pool_slots,
                  vram_slots=(vram.slots if vram else 0), attn_ms=a.attn_ms, ffn_ms=a.ffn_ms,
@@ -362,7 +372,7 @@ def main() -> int:
 
     summary = {
         "label": a.label, "model": str(a.model), "trace": str(a.trace),
-        "tokens_replayed": n, "run_seconds": run_s, "fatal": fatal,
+        "tokens_replayed": n, "predictor_warmup": len(warm_rows), "run_seconds": run_s, "fatal": fatal,
         "config": {"ram_bytes": ram_bytes, "ram_slots": ram_slots, "depth": a.depth,
                    "workers": a.workers, "pool_slots": pool_slots, "attn_ms": a.attn_ms,
                    "ffn_ms": a.ffn_ms, "drop_after_read": a.drop_after_read, "cold": a.cold,
