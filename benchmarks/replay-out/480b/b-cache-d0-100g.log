@@ -1,0 +1,2 @@
+cold: residency after drop 0.00%
+replay b-cache-d0-100g: 150 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 100.0 GB = 3509 experts (35.4% of all); depth 0, 8 workers, pool 16; drop-after-read; device md0 members ['sda', 'sdb']

@@ -2,3 +2,12 @@ cold: residency after drop 0.00%
 replay b-verify: 3 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 0, 8 workers, pool 16; drop-after-read; device md0 members ['sda', 'sdb']
   token    0    19783 ms  wait  14799  stalls 496 late   0 useful   0  cache   0/496  dev 13.17 GB  36325 reads @  380 KB
   token    1    18861 ms  wait  10755  stalls 329 late   0 useful   0  cache 167/496  dev 13.17 GB  36701 reads @  376 KB
+  token    2    17772 ms  wait   7781  stalls 241 late   0 useful   0  cache 255/496  dev 13.17 GB  37080 reads @  372 KB
+
+b-verify: 3 tokens in 56 s, median 18861 ms/token (min 17772, max 19783)
+  cache hit rate 28.4% (422/1488), 0 evictions, 1066 resident at end
+  prefetch issued 0, useful 0, late 0, wasted 0 (0.0 GB), stalls 1066, accuracy 0.0%, pool exhausted 0, timed out 0
+  stream 28.3 GB at 0.24 GB/s, 0 failed reads, storage ops 4464
+  md0: 39.5 GB in 110106 reads @ 376 KB, await 7.30 ms, 0.70 GB/s; sda: 19.7 GB in 49596 @ 417 KB; sdb: 19.8 GB in 49661 @ 417 KB
+  per token: median 13.17 GB from md0 in 36701 reads
+  verified 1488 deliveries against exact reads, 0 mismatches; residency 0.0% -> 0.0%

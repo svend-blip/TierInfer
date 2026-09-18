@@ -260,3 +260,28 @@ inferred from bytes read.
   keeps meeting: a counter that is only ever incremented on the happy path.
 - **Unresolved:** `missing-range` and `tiny-vram` results pending rerun.
 - **Next:** measurement arms running (`cache-d0-100g` first).
+
+## CP-8b — failure behaviour complete
+
+- **Revision:** the commit carrying this entry.
+- **Result:** all six injections have fired and are in `VALIDATION-480B.md`
+  §6. Re-aimed reruns: `inj3-missing-range` — expert (0, 93), routed by the
+  second replayed token — ended the run at token 1 with
+  `FATAL: explicit failure: injected: expert (0, 93) cannot be resolved to
+  byte ranges` after 496 verified deliveries; `inj3-tiny-vram` — 8 slots —
+  0.3 % VRAM hit, 3 955 transfers, 0 mismatches over 3 968 deliveries.
+  Totals across the injection arms: **17 856 delivered experts compared
+  with exact reads, 0 mismatches**; every degradation was slower, none was
+  wrong; one failure was explicit and named its cause.
+- **Addendum §18 coverage:** VRAM exhausted (tiny-vram), RAM pressure
+  (100 GiB tier under a 140 G cgroup, 5–7 k evictions per arm), prefetch
+  falling behind (`late` counted in every arm), a requested expert not
+  cached (stalls, every arm), prediction wrong (bad-predictor), cache space
+  exhausted (evictions; tiny-pool for the stream pool), an async read
+  failing (fail-reads), a range that cannot be resolved (missing-range).
+  NVMe latency spikes were not injected; `await` stayed 1.4–2.0 ms
+  throughout and the timeout path is covered by a unit test
+  (`test_a_wait_timeout_falls_back_to_the_exact_path`).
+- **Next:** `chain6` — the same measurement arms with a layer's demand
+  misses read concurrently (`d55e20e`), then CP-9 and the final
+  reconciliation.

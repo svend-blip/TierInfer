@@ -295,7 +295,7 @@ issued no speculation at all and two injections did not fire — recorded in
 | predictor always wrong (experts 144–159) | 397 speculative reads, 10 useful, 384 wasted (10.9 GB), 1 838 exact fallbacks, pool exhausted 444× | 3 968 / **0** |
 | one speculative read in fifty fails (`EIO`) | 15 injected → 15 failed loads → 15 exact fallbacks; 270 issued, 93 useful | 3 968 / **0** |
 | two stream buffers | pool exhausted 165×, speculation throttled to 29 issued | 3 968 / **0** |
-| eight VRAM slots | _(rerun pending; first run lost its counters to a harness bug)_ | 3 968 / **0** |
+| eight VRAM slots (0.2 GB) | 0.3 % VRAM hit (13 of 3 968), 3 955 transfers of 105 GB at 26.1 GB/s — the tier thrashes, the token gets its bytes | 3 968 / **0** |
 | an expert whose ranges cannot be resolved (routed by token 1) | token 0 delivered (496 / 0), then **`FATAL: explicit failure: injected: expert (0, 93) cannot be resolved to byte ranges`** and the run ended | 496 / **0** |
 
 The two outcomes the scope allows are the two observed: wrong guesses, failed
