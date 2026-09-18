@@ -549,7 +549,7 @@ class LoaderServer:
             data += bytes(b - end)
         return data
 
-    def _copy_pages(self, m: Mapping, a: int, b: int, source: Callable[[int, int], bytes]) -> None:
+    def _copy_pages(self, m: Mapping, a: int, b: int, source: Callable[[int, int], bytes]) -> int:
         """UFFDIO_COPY the file's bytes for pages [a, b) of the mapping.
 
         Pages already present (a neighbour's edge, a race with another
@@ -596,13 +596,17 @@ class LoaderServer:
                         self._say(f"UFFDIO_COPY keeps returning EAGAIN ({self.stats.copy_eagain} so far)")
                     time.sleep(0.001)
                 elif e.errno == errno.ENOENT:
-                    # part of [cur, end) is unmapped: halve the ask and try again;
-                    # a single page that is gone ends the copy — everything past
-                    # it is the unmapped fragment
+                    # part of [cur, end) is unmapped: halve the ask and try again.
+                    # A single page that is gone is skipped, not treated as the
+                    # end — llama.cpp unmaps a *prefix* fragment too (whatever
+                    # precedes the first used tensor), and the first live run
+                    # stopped at it and left the rest of the chunk unserved.
                     if end - cur <= PAGE:
                         self.stats.unmapped_pages += 1
-                        break
-                    end = cur + max(PAGE, ((end - cur) // 2) // PAGE * PAGE)
+                        cur += PAGE
+                        end = b
+                    else:
+                        end = cur + max(PAGE, ((end - cur) // 2) // PAGE * PAGE)
                 else:
                     raise LoaderError(f"UFFDIO_COPY at {m.base + cur:#x}: {e}") from e
         self.stats.copy_seconds += time.perf_counter() - t0
@@ -610,6 +614,7 @@ class LoaderServer:
         if self.debug:
             self._say(f"copied [{a}, {b}) {b - a} bytes, {skipped} pages already present, "
                       f"{(time.perf_counter() - t0) * 1000:.1f} ms")
+        return skipped
 
     # -- eviction -------------------------------------------------------------
 

@@ -40,7 +40,15 @@ size = os.fstat(fd).st_size
 mm = mmap.mmap(fd, size, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ)
 out = []
 for step in plan:
-    if step[0] == "unmap_tail":
+    if step[0] == "unmap_head":
+        base = None
+        for line in open(os.environ["TIERINFER_BASE_FILE"]):
+            p_, b_, l_ = line.split()
+            if p_ == os.path.realpath(path):
+                base = int(b_, 16)
+        libc = ctypes.CDLL(ctypes.util.find_library("c")); libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+        assert libc.munmap(base, step[1]) == 0
+    elif step[0] == "unmap_tail":
         # what llama.cpp does with fragments no used tensor lives in
         libc = ctypes.CDLL(ctypes.util.find_library("c"))
         # the shim notes where the anonymous region landed, for exactly this
@@ -219,5 +227,23 @@ def test_a_chunk_that_straddles_an_unmapped_tail_is_still_served(served):
         assert out[0]["digest"] == _digest(shards[0], cut - 4096, 4096), err
         assert server.stats.faults >= 1
         assert server.stats.repeat_faults == 0
+    finally:
+        server.close()
+
+
+def test_a_chunk_whose_head_is_unmapped_still_serves_its_tail(served):
+    """llama.cpp also unmaps whatever precedes the first used tensor."""
+    ix, shards = served
+    sock = _sock_path(None)
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, verbose=False,
+                          drop_page_cache=False, floor_chunk=16384)
+    _start(server, sock)
+    try:
+        files = ":".join(str(f) for f in ix.gguf.files)
+        plan = [["unmap_head", 8192], ["read", 8192, 4096]]      # first chunk: pages 0-1 gone, read page 2
+        out, err = _run_child(shards[0], plan, sock, files)
+        assert out[0]["digest"] == _digest(shards[0], 8192, 4096), err
+        assert server.stats.repeat_faults == 0
+        assert server.stats.unmapped_pages >= 1
     finally:
         server.close()

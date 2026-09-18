@@ -117,9 +117,19 @@ class StorageBackend:
     """
 
     def __init__(self, paths: str | Path | Sequence[str | Path], *,
-                 advise_random: bool = True):
+                 advise_random: bool = True, align: int = 0):
         if isinstance(paths, (str, Path)):
             paths = [paths]
+        if align < 0 or (align & (align - 1)):
+            raise ValueError("align must be zero or a power of two")
+        #: Round every read outward to a multiple of this many bytes. On an md
+        #: RAID0 with a 512 KiB chunk, an expert-sized read that starts 32 bytes
+        #: into a chunk is split at every chunk boundary into two partial
+        #: requests (md0 saw 361 KB means where the chunk is 512); reading the
+        #: covering aligned range costs a little more data and lets every
+        #: request be a whole chunk. Whether that pays is measured, not assumed
+        #: — this is the knob the measurement turns.
+        self.align = align
         files = [Path(p) for p in paths]
         if not files:
             raise ValueError("a backend needs at least one file")
@@ -213,15 +223,23 @@ class StorageBackend:
     def read(self, ranges: list[ByteRange] | ByteRange) -> tuple[list[bytes], ReadStat]:
         """Read these ranges, one operation each, and time the whole thing."""
         rs = _as_list(ranges)
-        sizes = [r.nbytes for r in rs]
         fds = [self.fd_for(r) for r in rs]
+        if self.align:
+            asks = [(r.file_offset - r.file_offset % self.align,
+                     -(-(r.file_offset + r.nbytes) // self.align) * self.align) for r in rs]
+        else:
+            asks = [(r.file_offset, r.file_offset + r.nbytes) for r in rs]
+        sizes = [b - a for a, b in asks]
         t0 = time.perf_counter()
-        blobs = [os.pread(fd, r.nbytes, r.file_offset) for fd, r in zip(fds, rs)]
+        raw = [os.pread(fd, b - a, a) for fd, (a, b) in zip(fds, asks)]
         elapsed = time.perf_counter() - t0
-        for blob, r in zip(blobs, rs):
+        blobs = []
+        for got, r, (a, _) in zip(raw, rs, asks):
+            blob = got[r.file_offset - a:r.file_offset - a + r.nbytes] if self.align else got
             if len(blob) != r.nbytes:
                 raise OSError(f"short read on {r.name}: {len(blob)} of {r.nbytes} bytes")
-        stat = ReadStat(nbytes=sum(len(b) for b in blobs), seconds=elapsed, operations=len(rs))
+            blobs.append(blob)
+        stat = ReadStat(nbytes=sum(len(g) for g in raw), seconds=elapsed, operations=len(rs))
         self.stats.record(stat, sizes)
         return blobs, stat
 

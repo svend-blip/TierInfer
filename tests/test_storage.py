@@ -91,3 +91,21 @@ def test_coalescing_covers_every_original_byte():
 def test_out_of_order_ranges_are_sorted_before_merging():
     merged = coalesce([_range("b", 100, 100), _range("a", 0, 100)])
     assert len(merged) == 1 and merged[0].file_offset == 0
+
+
+def test_aligned_reads_return_exactly_the_range_and_count_the_covering_bytes(blob):
+    """Item 7: reads rounded outward to the array's chunk still deliver the
+    bytes asked for, and the stats count what actually went to the device."""
+    raw = blob.read_bytes()
+    with StorageBackend(blob, align=4096) as s:
+        blobs, stat = s.read([_range("a", 1000, 512), _range("b", 40000, 5000)])
+    assert blobs[0] == raw[1000:1512]
+    assert blobs[1] == raw[40000:45000]
+    assert stat.nbytes == 4096 + 8192           # covering ranges [0,4096) and [36864,45056)
+    assert stat.operations == 2
+
+
+def test_align_must_be_a_power_of_two(blob):
+    import pytest
+    with pytest.raises(ValueError):
+        StorageBackend(blob, align=3000)
