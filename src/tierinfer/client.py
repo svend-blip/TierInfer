@@ -48,6 +48,7 @@ _UFFDIO_API = 0xC018AA3F
 _UFFDIO_REGISTER = 0xC020AA00
 _UFFDIO_REGISTER_MODE_MISSING = 1
 _UFFDIO_COPY = 0xC028AA03
+_UFFDIO_WAKE = 0x8010AA02
 _UFFD_EVENT_PAGEFAULT = 0x12
 PAGE = mmap.PAGESIZE
 
@@ -90,6 +91,7 @@ class _Session:
         self.pid = os.getpid()
         self.fallback = False                 # the server went away; this process serves its own faults
         self.fallback_pages = 0
+        self.fallback_woken = 0               # regions woken at fallback start (threads whose faults the dead server had taken)
         self.ctl = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.ctl.connect(sock_path)
         self.ctl.sendall(f"HELLO ctl {self.pid}\n".encode())
@@ -117,7 +119,13 @@ class _Session:
 
     def say(self, line: str) -> None:
         with self.lock:
-            self.ctl.sendall((line + "\n").encode())
+            try:
+                self.ctl.sendall((line + "\n").encode())
+            except OSError:
+                # the server is gone (fallback mode, or about to be): there is
+                # nobody to tell, and the caller must not fail because of it
+                if not self.fallback:
+                    raise
 
     def route(self, layer: int, expert_ids, *, after: bool = False) -> None:
         """What the router chose for this layer, this step. ``expert_ids``: one
@@ -188,6 +196,18 @@ class _Session:
         self._fds: dict = {}
         t = threading.Thread(target=self._fallback_loop, daemon=True, name="tierinfer-fallback")
         t.start()
+        # A fault the dead server had already read off the descriptor is not
+        # delivered again: its thread sleeps until something wakes that range.
+        # Wake every live region once; a woken thread retries, faults afresh
+        # if the page is still missing, and this time we are the reader.
+        with self.lock:
+            live = [r for r in self.regions.values() if not r.closed]
+        for r in live:
+            try:
+                fcntl.ioctl(self.uffd, _UFFDIO_WAKE, struct.pack("<QQ", r.base, r.alen))
+                self.fallback_woken += 1
+            except OSError as e:
+                print(f"tierinfer-client: wake of {r.tag}: {e}", file=sys.stderr, flush=True)
 
     def _read_page(self, region: "TieredRegion", off: int) -> bytes:
         logical = region.logical_off + off
@@ -297,7 +317,10 @@ class TieredRegion:
         self.closed = True
         with self.session.lock:
             self.session.regions.pop(self.base, None)
-        self.session.say(f"UNMAP {self.base:x} {self.alen}")        # the server forgets first
+        try:
+            self.session.say(f"UNMAP {self.base:x} {self.alen}")    # the server forgets first
+        except OSError:
+            pass                                                     # no server left to forget
         _libc.munmap(ctypes.c_void_p(self.base), self.alen)
 
     def __del__(self) -> None:

@@ -57,7 +57,7 @@ for step in plan:
     elif step[0] == "close":
         regions.pop(step[1]).close()
 s = session(sock)
-print(json.dumps({"out": out, "evictions": s.evictions, "refused": s.refused, "fallback": s.fallback, "fallback_pages": s.fallback_pages}))
+print(json.dumps({"out": out, "evictions": s.evictions, "refused": s.refused, "fallback": s.fallback, "fallback_pages": s.fallback_pages, "fallback_woken": s.fallback_woken}))
 '''
 
 
@@ -108,6 +108,7 @@ def test_a_logical_buffer_is_served_row_by_row_from_the_shards(ftw):
         plan += [["read", "gu0", 2 * row_gu + 100, 16], ["sleep", 0.1]]
         for e in range(EXPERTS):
             plan += [["read", "gu0", e * row_gu, row_gu], ["read", "dn0", e * row_dn, row_dn]]
+        plan += [["sleep", 0.2]]           # the last copy lands before its bookkeeping; give ROUTE the settled books
         plan += [["route", "gu0", 0, [1, 3]], ["route", "gu0", 1, [0, 2]], ["route", "gu0", 0, [2, 2]]]
         plan += [["close", "gu0"], ["close", "dn0"]]
         res, err = _child(sock, plan)
@@ -250,4 +251,5 @@ def test_a_server_that_dies_leaves_a_client_that_serves_itself(ftw, tmp_path):
         want += [_digest(data, gu.global_off + e * row_gu, row_gu), _digest(data, dn.global_off + e * row_dn, row_dn)]
     assert res["out"] == want, err
     assert res["fallback"] is True and res["fallback_pages"] >= 1, (res, err)
+    assert res["fallback_woken"] == 2, res          # both live regions woken, for faults the server took with it
     assert "went away" in err
