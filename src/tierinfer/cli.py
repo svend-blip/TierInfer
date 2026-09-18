@@ -114,10 +114,6 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 def _serve(args) -> int:
     from .autoconfig import configure
     from .loader import LoaderServer
@@ -142,3 +138,7 @@ def _serve(args) -> int:
     finally:
         server.close()
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

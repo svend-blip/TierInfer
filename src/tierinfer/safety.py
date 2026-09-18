@@ -128,6 +128,9 @@ SPECULATIVE_MODULES: dict[str, tuple[str, ...]] = {
     "tierinfer.prefetch": ("load_now", "exact_fallbacks"),
     "tierinfer.policy": ("nvme_reads", "stalls"),
     "tierinfer.stream": ("load_now",),
+    # the loader speculates through prefetch; every byte it copies comes from
+    # _file_bytes, which reads the index's ranges through the backend
+    "tierinfer.loader": ("_file_bytes", "faults"),
 }
 
 
