@@ -1,0 +1,3 @@
+replay inj-fail-reads: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    21198 ms  wait  16038  stalls 496 late   0 useful   0  cache   0/  0  dev 13.16 GB  37293 reads @  370 KB
+  token    1    17901 ms  wait   7875  stalls 247 late   0 useful   0  cache 249/249  dev 13.16 GB  37325 reads @  370 KB

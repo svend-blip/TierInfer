@@ -185,6 +185,12 @@ class Prefetcher:
                 self.stats.stalls_avoided += 1
                 out[key] = self.cache.get(key)
                 continue
+            # Not resident. Say so to the cache's own counters: the first
+            # version only ever called `get` on a hit, so the cache reported
+            # a 100 % hit rate over a run in which every expert was read
+            # from the file — the audit's "misleading telemetry", produced by
+            # the audit's own author a day later.
+            self.cache.stats.misses += 1
             flight = self._inflight.pop(key, None)
             if flight is not None:
                 out[key] = self._collect(key, flight, now)

@@ -1,0 +1,12 @@
+replay inj-bad-predictor: 8 tokens, 62 MoE layers, 8x62 = 496 experts/token of 29.2 MB; RAM cache 60.0 GB = 2105 experts (21.2% of all); depth 8, 8 workers, pool 48; drop-after-read; device md0 members ['sda', 'sdb']
+  token    0    21972 ms  wait  16896  stalls 494 late   0 useful   2  cache   0/  0  dev 14.53 GB  41018 reads @  371 KB
+  token    1    17851 ms  wait   7861  stalls 246 late   0 useful   1  cache 249/249  dev 13.16 GB  37397 reads @  369 KB
+  token    2    17465 ms  wait   7262  stalls 231 late   0 useful   1  cache 264/264  dev 13.16 GB  37317 reads @  370 KB
+
+inj-bad-predictor: 8 tokens in 141 s, median 17100 ms/token (min 15465, max 21972)
+  cache hit rate 100.0% (2117/2117), 0 evictions, 1851 resident at end
+  prefetch issued 397, useful 10, late 3, wasted 384 (10.9 GB), stalls 1838, accuracy 3.3%, pool exhausted 444, timed out 0
+  stream 11.3 GB at 0.84 GB/s, 0 failed reads, storage ops 17418
+  md0: 106.7 GB in 303701 reads @ 368 KB, await 1.59 ms, 0.76 GB/s; sda: 53.3 GB in 138434 @ 404 KB; sdb: 53.4 GB in 138812 @ 403 KB
+  per token: median 13.16 GB from md0 in 37576 reads
+  verified 3968 deliveries against exact reads, 0 mismatches; residency 0.0% -> 0.5%

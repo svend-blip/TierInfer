@@ -369,3 +369,14 @@ def test_the_cache_hears_what_each_expert_cost_to_load(modelfile):
         for key in ((0, 0), (0, 5)):
             st = t.stats[key]
             assert st.loads == 1 and st.load_seconds > 0
+
+
+def test_the_cache_counts_the_misses_the_prefetcher_serves_around_it(modelfile):
+    b, s, t, p = _rig(modelfile, _Fixed([0]), depth=1)
+    with b, s:
+        p.before_layer(0, {})
+        p.on_routing(0, [0, 1, 2])      # 0 prefetched, 1 and 2 exact: none was a cache hit
+        assert p.cache.stats.hits == 0 and p.cache.stats.misses == 3
+        p.on_routing(0, [0, 1])         # now both resident
+        assert p.cache.stats.hits == 2 and p.cache.stats.misses == 3
+        assert p.cache.stats.hit_rate == pytest.approx(0.4)
