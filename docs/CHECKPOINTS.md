@@ -557,3 +557,48 @@ inferred from bytes read.
   effect under real compute, so this is a better guess for a mechanism
   whose value on this device is unproven.
 - **Acceptance IDs moved:** TI-PRED-007 → VERIFIED.
+
+## CP-15 — under the loader: the prerouter live, prefetch depth 8, and stripe-aligned reads (items 2, 3, 7)
+
+- **Revision:** `00b0792` (+ `bcbdd57` merged); GLM-4.5-Air IQ4_XS, `-ngl 0
+  -c 4096 -t 32`, 27 GB tier, the 111-token prompt, 32 greedy tokens, cold
+  page cache, two runs per arm (`benchmarks/loader-out/glm-{exact,align512,d8-adaptive,d8-prerouter}-loader-*.json`).
+  Tokens identical to native in every run.
+
+  | arm | gen t/s (2 runs) | infer GiB | md0 reads | mean KB | prefetch issued / useful / late / wasted | copied GB | read s |
+  |---|--:|--:|--:|--:|---|--:|--:|
+  | exact reads, depth 0 | 0.340 / 0.382 | 68.4 | 191 k | 375 | — | 77 | — |
+  | **align 512 KiB**, depth 0 | 0.390 / 0.384 | 72.0 | 172 k | 439 | — | 77 (89 read) | 90 |
+  | depth 8, adaptive blend | 0.340 / 0.355 | 70.5 | 197 k | 374 | 411 / 304 / 140 / 98 | 85 | 94 |
+  | depth 8, **prerouter online** | 0.193 / 0.194 | 72.1 | 202 k | 374 | 2 110 / 818 / 148 / 726 | 93 | 115 |
+
+- **Item 7, stripe-aligned reads (`serve --align 524288`):** every read
+  rounded outward to md0's 512 KiB chunk costs 15 % more bytes from the
+  members (89 GiB read for 77 delivered) and gives 10 % fewer requests to
+  md0 (172 k vs 191 k, 439 vs 375 KB each). Generation 0.387 vs 0.361 t/s
+  median — inside the run-to-run spread of the exact arm (0.340–0.382), so
+  **not shown to pay** on this device with two runs; the request count is
+  the only clear effect. Left off by default; the knob and the numbers
+  stay.
+- **Item 3, prefetch depth 8 with the blend:** 411 guesses in 32 tokens,
+  74 % useful, but generation 0.340/0.355 against 0.340/0.382 at depth 0:
+  **no gain**. The guesses that were useful displaced demand reads on a
+  device already at its expert-sized ceiling; the 8 GB more copied is the
+  cost. Same finding as the 480B replay (V §4.2) and CP-13.
+- **Item 2, the prerouter live (`--predictor prerouter`):** five times the
+  guesses (its scores spread over more experts than the blend's, so more
+  pass the resident filter), 818 useful (+514) and 726 wasted (+628), 4 %
+  more hits, 7.5 GB more copied, 21 s more reading — and **generation
+  halved** (0.193). Ten points of recall (CP-14) do not buy time when
+  every extra read competes with the demand path for the same 0.75 GB/s.
+  The prerouter stays available and off by default; a prefetch that pays
+  needs a device with headroom, not a better guesser.
+- **TI-POLICY-006:** `--adapt-depth` (halve under 35 % yield, double over
+  70 %) is built and unit-tested (`tests/test_loader_policy.py`); with
+  prefetch itself not paying on this device, its live A/B is not run —
+  the dial would only choose between two non-gains.
+- **Acceptance IDs moved:** TI-PERF-011 → VERIFIED (predictor A/B under
+  the loader: negative); TI-PREF-001 → VERIFIED (asynchronous, overlapping:
+  74 % of guesses land before use; measured value: none); TI-NVME-008
+  extended with the align measurement; TI-POLICY-006 → VERIFIED (built,
+  tested; live value bounded by the prefetch result).

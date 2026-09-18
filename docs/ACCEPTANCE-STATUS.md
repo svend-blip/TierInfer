@@ -46,7 +46,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-NVME-005 | VERIFIED | worker threads + `preadv`, `STREAMING.md` 3.47×; loader prefetch pool |
 | TI-NVME-006 | VERIFIED | bounded pool, `pool_exhausted` counted (RO inj2-tiny-pool) |
 | TI-NVME-007 | VERIFIED | fail-reads injection: 15 failures → exact path, 0 mismatches (CP-8b) |
-| TI-NVME-008 | VERIFIED | V §4.2: merging is md's (24→131 KB native), locality is TierInfer's (361→403 KB) |
+| TI-NVME-008 | VERIFIED | V §4.2: merging is md's (24→131 KB native), locality is TierInfer's (361→403 KB); `--align 524288` under the loader: 10 % fewer requests, 15 % more bytes, t/s within noise (CP-15) |
 
 ## RAM cache (A.7)
 
@@ -92,7 +92,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-PREF-001 | IN_PROGRESS | asynchronous by construction, priority classes + coalescing (`PrefetchScheduler`, `_serve_run`); the 480B A/B ran at depth 0 — depth>0 arms under the loader pending |
+| TI-PREF-001 | VERIFIED | depth 8 under the loader: 74 % of guesses landed before use (asynchronous, overlapping); generation unchanged vs depth 0 — the overlap buys nothing on a saturated device (CP-15) |
 | TI-PREF-002 | VERIFIED | `BufferPool`, `pool_exhausted` |
 | TI-PREF-003 | VERIFIED | in-flight/resident dedup (`Prefetcher.before_layer`, loader `_serving`) |
 | TI-PREF-004…006 | VERIFIED | useful/late/wasted split (`8d33288`; RO) |
@@ -106,7 +106,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-POLICY-001…003 | VERIFIED | `autoconfig` table (V subject); `tests/test_autoconfig.py` |
 | TI-POLICY-004 | VERIFIED | recency-led retention |
 | TI-POLICY-005 | VERIFIED | `probe_concurrency` decides demand batching per device (`5ceaf53`) |
-| TI-POLICY-006 | IN_PROGRESS | `TierPolicy` dial is a simulator (AUD 9); live adaptation of prefetch depth not yet wired into the loader |
+| TI-POLICY-006 | VERIFIED | `serve --adapt-depth`: depth re-decided every 8 tokens from yield (`tests/test_loader_policy.py`); live value bounded by prefetch not paying on this device (CP-15) |
 | TI-POLICY-007 | VERIFIED | `--ram-gb`, `--depth`, `--batch-demand` honoured (`tests/test_autoconfig.py`, replay) |
 | TI-POLICY-008 | VERIFIED | the FlowRunner run's tier and depth came from `tierinfer resolve` (capability + host), not from flags |
 
@@ -199,7 +199,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 |---|---|---|
 | TI-PERF-001…008 | VERIFIED | CP-4/5 tables, RO |
 | TI-PERF-009…010 | VERIFIED (replay) | V §4 |
-| TI-PERF-011 | IN_PROGRESS | predictor A/B under the loader running (chain15: adaptive vs prerouter at depth 8 on GLM) |
+| TI-PERF-011 | VERIFIED (negative) | prerouter vs blend at depth 8 under the loader: 0.19 vs 0.35 t/s — better recall, five times the speculative reads, half the speed (CP-15) |
 | TI-PERF-012 | ACCEPTED | negative results kept (V §4.2, §4.3) |
 
 ## FlowRunner (A.20)
