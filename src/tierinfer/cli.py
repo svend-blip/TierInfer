@@ -84,10 +84,19 @@ def main(argv: list[str] | None = None) -> int:
     srv.add_argument("--keep-page-cache", action="store_true",
                      help="do not drop the page cache behind reads (double caching; for diagnosis)")
     srv.add_argument("--quiet", action="store_true")
+    srv.add_argument("--capability", default=None,
+                     help="a tierinfer.residency capability document (JSON): the RAM tier, prefetch "
+                          "depth and workers come from resolving it against this host")
+
+    res = sub.add_parser("resolve", help="resolve a capability document against this host and model, as JSON")
+    res.add_argument("capability")
+    res.add_argument("model")
 
     args = p.parse_args(argv)
     if args.command == "serve":
         return _serve(args)
+    if args.command == "resolve":
+        return _resolve(args)
     try:
         ix = load(args.model)
         if args.command == "inspect":
@@ -123,13 +132,31 @@ def _serve(args) -> int:
     except (GGUFError, OSError) as exc:
         print(f"tierinfer: {exc}", file=sys.stderr)
         return 1
-    ram = int(args.ram_gb * GB) if args.ram_gb > 0 else configure(ix).ram_bytes
+    depth, workers = args.depth, args.workers
+    if args.capability:
+        from .adapters.flowrunner import Capability, CapabilityError, resolve
+        try:
+            r = resolve(Capability.load(args.capability), ix)
+        except CapabilityError as exc:
+            print(f"tierinfer: {exc}", file=sys.stderr)
+            return 1
+        if not r.available:
+            print("tierinfer: the capability cannot be provided here:\n  - " + "\n  - ".join(r.refusals),
+                  file=sys.stderr)
+            return 3
+        cfg = r.configuration
+        ram = int(args.ram_gb * GB) if args.ram_gb > 0 else cfg.ram_bytes
+        depth = args.depth if args.depth else cfg.prefetch_depth
+        workers = cfg.stream_workers
+        print(r.explain(), file=sys.stderr)
+    else:
+        ram = int(args.ram_gb * GB) if args.ram_gb > 0 else configure(ix).ram_bytes
     files = ":".join(str(f) for f in ix.gguf.files)
     print("tierinfer: start the runtime with\n"
           f"  LD_PRELOAD=<TierInfer>/build/libtierinfer_mmap.so TIERINFER_SOCK={args.sock} "
           f"TIERINFER_FILES={files}", file=sys.stderr, flush=True)
     tel = Telemetry(args.telemetry) if args.telemetry else None
-    server = LoaderServer(ix, ram_bytes=ram, workers=args.workers, depth=args.depth, telemetry=tel,
+    server = LoaderServer(ix, ram_bytes=ram, workers=workers, depth=depth, telemetry=tel,
                           verbose=not args.quiet, drop_page_cache=not args.keep_page_cache)
     try:
         server.serve(args.sock)
@@ -138,6 +165,22 @@ def _serve(args) -> int:
     finally:
         server.close()
     return 0
+
+
+def _resolve(args) -> int:
+    from .adapters.flowrunner import Capability, CapabilityError, resolve, telemetry_values
+    try:
+        ix = load(args.model)
+        r = resolve(Capability.load(args.capability), ix)
+    except (GGUFError, OSError, CapabilityError) as exc:
+        print(json.dumps({"available": False, "error": str(exc)}))
+        return 1
+    out = {"available": r.available, "refusals": r.refusals,
+           "configuration": r.configuration.to_dict() if r.configuration else None,
+           "telemetry": telemetry_values(r.configuration) if r.configuration else None,
+           "files": [str(f) for f in ix.gguf.files]}
+    print(json.dumps(out, indent=2))
+    return 0 if r.available else 3
 
 
 if __name__ == "__main__":
