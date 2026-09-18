@@ -542,7 +542,8 @@ class LoaderServer:
         self._lock = threading.RLock()
         self._serving: dict[object, threading.Event] = {}      # key -> done event
         self._prefetched: set = set()
-        self._token_faulted: set = set()      # experts faulted in since the last token boundary                          # keys materialised by prefetch, not yet routed
+        self._token_faulted: set = set()      # experts faulted in since the last token boundary
+        self._after_faulted: set = set()      # the previous token's, for a ROUTED burst that crosses the boundary                          # keys materialised by prefetch, not yet routed
         self._floor_done: set = set()                          # (path, chunk index)
         self._repeats: dict[int, int] = {}                     # page offset -> consecutive faults seen
         self._resident_refaults: dict[object, int] = {}        # key -> faults while already resident
@@ -1085,15 +1086,15 @@ class LoaderServer:
         parts = line.split(" ", 4)
         layer, n_tokens, n_used = int(parts[1]), int(parts[2]), int(parts[3])
         rows = [[int(x) for x in row.split(",") if x] for row in parts[4].split(";")] if len(parts) > 4 else []
-        if layer <= self._last_layer:
-            self._end_token()
+        if layer <= self._last_layer or (after and self._last_layer < 0):
+            self._end_token()               # a ROUTED burst always starts at a boundary, the first one too
         self._last_layer = layer
         keys = {(layer, e) for row in rows for e in row}
         with self._lock:
             for key in keys:
                 self.stats.routed += 1
                 if after:
-                    if key in self._token_faulted:
+                    if key in self._after_faulted:
                         self.stats.misses += 1
                         self.cache.stats.misses += 1
                     else:
@@ -1213,6 +1214,10 @@ class LoaderServer:
 
     def _end_token(self) -> None:
         with self._lock:
+            # what a ROUTED burst arriving now is scored against: the faults of the
+            # step that just ran, which the burst describes (its first line is the
+            # boundary; clearing before scoring made every expert a hit)
+            self._after_faulted = self._token_faulted
             self._token_faulted = set()
         if self._token_keys:
             self.tracker.record(self._token_keys)

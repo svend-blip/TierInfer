@@ -165,12 +165,15 @@ def test_routing_reported_after_the_step_scores_hits_by_faults(ftw):
         plan += [["routed", "gu0", 0, [0, 1]], ["routed", "gu0", 1, [0, 1]]]            # step 1, reported afterwards
         plan += [["read", "gu0", 0, 16], ["read", "gu0", row_gu, 16], ["sleep", 0.1]]   # resident: no faults
         plan += [["routed", "gu0", 0, [0, 1]], ["routed", "gu0", 1, [0, 1]], ["sleep", 0.1]]   # step 2
-        plan += [["close", "gu0"]]
+        plan += [["read", "gu0", 2 * row_gu, 16], ["read", "gu0", 3 * row_gu, 16], ["sleep", 0.1]]   # step 3 faults 2, 3
+        plan += [["routed", "gu0", 0, [2, 3]], ["routed", "gu0", 1, [2, 3]], ["sleep", 0.1]]   # its burst starts at layer 0:
+        plan += [["close", "gu0"]]                                                          # the boundary must not erase them
         res, err = _child(sock, plan)
         s = server.stats
         # step 1: layer 0's two experts were faulted this token -> misses; layer 1 never touched -> "hits" by
-        # the rule (not faulted) — a runtime that routes to unmapped layers is not what this measures
-        assert s.tokens >= 1, s
-        assert s.misses == 2 and s.hits == 6, s
+        # the rule (not faulted). step 2: nothing faulted -> 4 hits. step 3: experts 2, 3 faulted -> 2 misses
+        # on layer 0, 2 "hits" on the untouched layer 1
+        assert s.tokens >= 2, s
+        assert s.misses == 4 and s.hits == 8, s
     finally:
         server.close()
