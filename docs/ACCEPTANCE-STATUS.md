@@ -208,7 +208,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 |---|---|---|
 | TI-FLOW-001 | VERIFIED | `flowrunner engine` resolves the capability through `tierinfer resolve` (FlowRunner `internal/tierinfer`) |
 | TI-FLOW-002 | VERIFIED | real run on GLM-4.5-Air: endpoint, completion, timings, `loader.*` telemetry (`benchmarks/flowrunner-out/`, FlowRunner `docs/ENGINE-tierinfer.md`) |
-| TI-FLOW-003 | NOT_STARTED | the engine adapter starts llama.cpp only; FreeToken through FlowRunner not built |
+| TI-FLOW-003 | VERIFIED | `runtime: freetoken`: FlowRunner started `tierinfer serve` + `ft serve` on Flash-Next, 31 tokens, TierInfer telemetry read back (`benchmarks/flowrunner-out/ft-engine.out`, FlowRunner `d556ef4`) |
 | TI-FLOW-004 | VERIFIED | the adapter passes a capability document and reads telemetry back; no tier decision lives in FlowRunner |
 | TI-FLOW-005 | VERIFIED | the flow names model, context and residency share — no shim, socket or tier size |
 
