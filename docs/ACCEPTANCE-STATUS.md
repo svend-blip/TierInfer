@@ -5,7 +5,7 @@ evidence points at repository paths, commits, tests, artefacts and
 checkpoints in `docs/CHECKPOINTS.md`. Updated at every checkpoint; the
 date at the top is the last reconciliation.
 
-**Last reconciled: 2026-09-18 (loader first build; GLM A/B running).**
+**Last reconciled: 2026-09-18 (CP-11: loader's first live A/B on GLM).**
 
 Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 `docs/CHECKPOINTS.md`; AUD = `docs/AUDIT-2026-09-18.md`; RO =
@@ -16,7 +16,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | ID | Status | Evidence / blocker |
 |---|---|---|
 | TI-CORE-001 | IN_PROGRESS | RAM and NVMe tiers exist under llama.cpp via the loader (`src/tierinfer/loader.py`, `tools/uffd/`); VRAM under llama.cpp is llama.cpp's own (`-ncmoe`), TierInfer's `VramResidency` cannot be consumed by its kernels — design §"What the VRAM tier is" |
-| TI-CORE-002 | IN_PROGRESS | loader evicts/prefetches by its own policy in a live llama.cpp process (`tests/test_loader.py`); runtime evidence pending GLM/480B A/B |
+| TI-CORE-002 | VERIFIED | loader's evictions bound llama.cpp's RSS at the budget (29.1 GB vs 33.6 native) during live generation (CP-11) |
 | TI-CORE-003 | IMPLEMENTED_UNVERIFIED | loader telemetry: resident set, bytes, evictions, per-token events (`LoaderServer._snapshot_values`, `_token_delta`) |
 | TI-CORE-004 | VERIFIED (replay) / IN_PROGRESS (live) | replay arms: hit rates follow routing locality (V §4, code vs prose) |
 | TI-CORE-005 | VERIFIED (replay) / IN_PROGRESS (live) | 100 vs 150 GiB tiers under a cgroup; VRAM slots from measured budget (V §4.1) |
@@ -125,16 +125,16 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | ID | Status | Evidence / blocker |
 |---|---|---|
 | TI-LLAMA-001 | IMPLEMENTED_UNVERIFIED | `tools/uffd/tierinfer_mmap.c` + `tierinfer.loader` (`f417eed`) |
-| TI-LLAMA-002 | IN_PROGRESS | GLM A/B running |
+| TI-LLAMA-002 | VERIFIED | GLM live run: faults, copies, evictions during generation (CP-11 telemetry) |
 | TI-LLAMA-003 | ACCEPTED | native runs without the shim (CP-4, CP-5) |
 | TI-LLAMA-004 | IMPLEMENTED_UNVERIFIED | `FileLayout` per shard |
 | TI-LLAMA-005 | IN_PROGRESS | 480B loader run pending |
-| TI-LLAMA-006 | IN_PROGRESS | loader reads observed in tests; live md0 pending |
-| TI-LLAMA-007 | IN_PROGRESS | |
+| TI-LLAMA-006 | VERIFIED | loader's preads observed on nvme0n1p2 during generation (CP-11) |
+| TI-LLAMA-007 | VERIFIED | 72 % resident hits per generated token from the loader's own residency set (CP-11) |
 | TI-LLAMA-008 | BLOCKED | VRAM under llama.cpp is llama.cpp's (`-ncmoe`); a TierInfer VRAM tier needs a llama.cpp patch — documented, not attempted |
 | TI-LLAMA-009 | IMPLEMENTED_UNVERIFIED | shim `cb_eval` → ROUTE |
-| TI-LLAMA-010 | IN_PROGRESS | greedy-token identity test is the A/B's first check |
-| TI-LLAMA-011 | IN_PROGRESS | |
+| TI-LLAMA-010 | VERIFIED | 32 greedy tokens identical to native (CP-11) |
+| TI-LLAMA-011 | IN_PROGRESS | first pass negative (0.086 vs 0.318 t/s) with a diagnosed defect; harness runs with the fix queued (CP-11) |
 | TI-LLAMA-012 | IN_PROGRESS | |
 
 ## FreeToken (A.15)
@@ -171,7 +171,7 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-SAFE-006 | VERIFIED | fail-reads |
 | TI-SAFE-007…008 | VERIFIED | bad-predictor; late counted and served |
 | TI-SAFE-009 | VERIFIED | refusals in autoconfig/index; shim "standing aside" message |
-| TI-SAFE-010 | IMPLEMENTED_UNVERIFIED | shim says on stderr when it stands aside; the server logs mappings; a run without a `mapping` event is native |
+| TI-SAFE-010 | VERIFIED | shim reports standing aside / serving on stderr; server logs each mapping; telemetry `mapping` event (CP-11) |
 
 ## 480B (A.18)
 

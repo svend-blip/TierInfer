@@ -381,3 +381,37 @@ inferred from bytes read.
   characteristics in the backend beyond the concurrency probe; the
   FlowRunner consumer; the NVMe tier under FreeToken; stripe-aligned reads
   on md (new, from this validation).
+
+## CP-11 — the loader under a running llama.cpp (first live A/B, GLM-4.5-Air)
+
+- **Revision:** `a1bea1e` (loader `f417eed` … `a8441dd`); this run used the
+  code before `a8441dd`.
+- **What ran:** `raw/../glm-first/ab.log`: llama-server b10482, `-ngl 0 -c
+  4096 -t 32 --no-warmup`, 111-token prompt, 32 greedy tokens, cold page
+  cache. Loader arm: `LD_PRELOAD=build/libtierinfer_mmap.so` +
+  `tierinfer serve --ram-gb 27 --workers 8 --depth 0`. Native arm: no shim,
+  `systemd-run --user --scope -p MemoryMax=32G`.
+- **Result — correctness:** the 32 generated tokens are **byte-identical**
+  between the arms (`glm-first/*.completion.json`). The loader's RSS held at
+  29.1 GB (tier 27 GiB + floor slack) against native's 33.6 GB under its
+  ceiling.
+- **Result — performance (negative, first pass):** loader prompt 2.24 t/s,
+  generation **0.086 t/s**; native under the ceiling 3.40 / **0.318 t/s**.
+  Whole-run reads: loader 411 GB in 3.4 M requests of 126 KB; native 124 GB
+  in 1.66 M of 78 KB.
+- **Why, from the loader's own telemetry** (`glm-first/loader.telemetry.jsonl`,
+  per generated token, median): 260 of 360 routed experts resident (72 %),
+  100 misses (~1 GB), **3 193 faults and 8.9 GB copied**. llama.cpp's 32
+  compute threads touch one expert's pages in parallel; every thread's
+  fault arrives as an event, and a counter heuristic re-copied whole
+  experts for a third of them — 36 000 repairs in 30 tokens. Fixed in
+  `a8441dd`: the client's `/proc/<pid>/pagemap` says whether the page is
+  present; present → wake, absent → copy. Also found and fixed on the way:
+  the mapped-prefix/suffix llama.cpp unmaps (`3564d7c`, `1c8f1a6`), a lost
+  wake-up on already-present pages (`bb883b3`), redundant re-copies of
+  resident experts (`750b00e`).
+- **Acceptance IDs moved:** TI-LLAMA-002 (activity during generation) and
+  TI-LLAMA-010 (identical tokens) → VERIFIED; TI-LLAMA-006/007 (real storage
+  reads, real RAM-tier hits) → VERIFIED; TI-LLAMA-011 → IN_PROGRESS (the
+  harness runs with the fix are queued: GLM ×3, then 480B ×3).
+- **Next:** CP-12 with the harness numbers.

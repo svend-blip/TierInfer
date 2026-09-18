@@ -1,0 +1,7 @@
+cold 0.0
+prompt 111 tok 49.5s (2.240 t/s); gen 32 tok 358.6s (0.086 t/s)
+loader-ngl0-27g done
+cold 0.0
+prompt 111 tok 32.7s (3.397 t/s); gen 32 tok 97.4s (0.318 t/s)
+native-ngl0-32g done
+ab-glm-done
