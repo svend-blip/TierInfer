@@ -202,6 +202,8 @@ class LoaderStats:
     faults_expert: int = 0
     faults_floor: int = 0
     faults_duplicate: int = 0           # another thread was already serving it
+    faults_resident: int = 0            # arrived for an expert already materialised; woken, not re-copied
+    faults_repaired: int = 0            # resident yet faulting repeatedly: copied again
     bytes_copied: int = 0
     copy_seconds: float = 0.0
     read_seconds: float = 0.0
@@ -255,6 +257,7 @@ class LoaderServer:
         self._prefetched: set = set()                          # keys materialised by prefetch, not yet routed
         self._floor_done: set = set()                          # (path, chunk index)
         self._repeats: dict[int, int] = {}                     # page offset -> consecutive faults seen
+        self._resident_refaults: dict[object, int] = {}        # key -> faults while already resident
         self._stop = threading.Event()
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="tierinfer-fault")
         self._prefetch_pool = ThreadPoolExecutor(max_workers=max(1, workers // 2),
@@ -460,12 +463,23 @@ class LoaderServer:
         """Materialise all slabs of one expert in the client, once."""
         with self._lock:
             if key in self.cache:
-                if why == "fault":
-                    # resident by our books, yet it faulted: an edge page the
-                    # eviction of a neighbour took, or a race with eviction.
-                    pass
-                else:
+                if why != "fault":
                     return
+                # Resident by our books, yet a fault arrived. Almost always
+                # this is a queued event from a thread that faulted while the
+                # copy was in flight — llama.cpp's compute threads touch one
+                # expert's pages in parallel — and its page is present now;
+                # the explicit wake after this call releases it. The first
+                # live run re-copied the whole expert for each of these
+                # (42 878 redundant copies in 24 000 faults). Only a page
+                # that keeps faulting gets the copy repeated, as a repair.
+                n = self._resident_refaults.get(key, 0) + 1
+                self._resident_refaults[key] = n
+                if n < 3:
+                    self.stats.faults_resident += 1
+                    return
+                self._resident_refaults[key] = 0
+                self.stats.faults_repaired += 1
             ev = self._serving.get(key)
             if ev is not None:
                 waiting = True
@@ -502,7 +516,14 @@ class LoaderServer:
         tag = (m.path, chunk)
         with self._lock:
             if tag in self._floor_done:
-                return
+                n = self._resident_refaults.get(tag, 0) + 1
+                self._resident_refaults[tag] = n
+                if n < 3:
+                    self.stats.faults_resident += 1
+                    return
+                self._resident_refaults[tag] = 0
+                self._floor_done.discard(tag)
+                self.stats.faults_repaired += 1
             ev = self._serving.get(tag)
             if ev is not None:
                 waiting = True
@@ -739,7 +760,8 @@ class LoaderServer:
     def _snapshot_values(self) -> dict:
         s = self.stats
         return {f"loader.{k}": getattr(s, k) for k in
-                ("faults", "faults_expert", "faults_floor", "faults_duplicate", "bytes_copied",
+                ("faults", "faults_expert", "faults_floor", "faults_duplicate", "faults_resident",
+                 "faults_repaired", "bytes_copied",
                  "copy_seconds", "read_seconds", "routed", "hits", "misses", "prefetch_issued",
                  "prefetch_useful", "prefetch_late", "prefetch_wasted", "evictions", "evict_bytes",
                  "tokens", "read_retries")} | {
