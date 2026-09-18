@@ -1,0 +1,171 @@
+{
+ "label": "flashnext-t16-tiered-1",
+ "cmd": [
+  "/home/svend/freetoken-qwen38/.venv/bin/ft",
+  "serve",
+  "--model",
+  "/data/ai-data/models/qwen38-flash-next-abliterated-ftw-fixed",
+  "--served-model-name",
+  "ab",
+  "--host",
+  "127.0.0.1",
+  "--port",
+  "8095",
+  "--gpu",
+  "0",
+  "--moe-strategy",
+  "offload",
+  "--moe-cpu-layers",
+  "12",
+  "--max-seq-len-override",
+  "32768",
+  "--kv-reserve-tokens",
+  "32768",
+  "--memory-ratio",
+  "0.79",
+  "--max-prefill-length",
+  "8192",
+  "--ple-backend",
+  "disk",
+  "--moe-cache-auto",
+  "--quant-backend",
+  "moe.nvfp4=triton",
+  "--max-running-requests",
+  "1",
+  "--sampling-defaults",
+  "model",
+  "--reasoning-parser",
+  "qwen3"
+ ],
+ "load_s": 44.071240186691284,
+ "wall_s": 25.12275215599948,
+ "prompt_tokens": 95,
+ "completion_tokens": 63,
+ "text": "We need answer user: \"Design an expert cache for a sparse mixture-of-experts model whose weights live on NVMe RAID. Cover the cache policy, prefetching on routing, and how to measure whether it helps. Be concrete and technical.\"\n\nNeed produce final answer detailed technical design. Need think through. Need\u241f",
+ "stats_before": {
+  "instance_id": "26f0de43-bb19-42f4-8cca-3861bb45b648",
+  "model": {
+   "id": "ab",
+   "ctx": 32768,
+   "attn": "hybrid_linear",
+   "moe": true,
+   "sampling": {
+    "temperature": 1.0,
+    "top_k": 20,
+    "top_p": 0.95
+   }
+  },
+  "uptime_s": 0,
+  "kv": null,
+  "mamba": null,
+  "swa": null,
+  "vram_bytes": 0,
+  "gpus": [
+   {
+    "index": 0,
+    "name": "NVIDIA GeForce RTX 5090",
+    "uuid": "GPU-8b1c6a65-47f7-b29d-114f-b0738f968b1b",
+    "total_bytes": 33668726784
+   }
+  ],
+  "throughput": {
+   "decode_tps": 0.0,
+   "prefill_tps": 0.0
+  },
+  "requests": {
+   "active": 0,
+   "completed": 0,
+   "p95_ms": 0,
+   "ttft_mean_ms": 0,
+   "prompt_tokens_total": 0,
+   "completion_tokens_total": 0
+  }
+ },
+ "stats_after": {
+  "instance_id": "26f0de43-bb19-42f4-8cca-3861bb45b648",
+  "model": {
+   "id": "ab",
+   "ctx": 32768,
+   "attn": "hybrid_linear",
+   "moe": true,
+   "sampling": {
+    "temperature": 1.0,
+    "top_k": 20,
+    "top_p": 0.95
+   }
+  },
+  "uptime_s": 25,
+  "kv": {
+   "used_pages": 0,
+   "total_pages": 512,
+   "page_size": 1
+  },
+  "mamba": {
+   "used_slots": 0,
+   "total_slots": 8
+  },
+  "swa": null,
+  "vram_bytes": 26189234176,
+  "gpus": [
+   {
+    "index": 0,
+    "name": "NVIDIA GeForce RTX 5090",
+    "uuid": "GPU-8b1c6a65-47f7-b29d-114f-b0738f968b1b",
+    "total_bytes": 33668726784
+   }
+  ],
+  "throughput": {
+   "decode_tps": 35.4,
+   "prefill_tps": 0.0
+  },
+  "requests": {
+   "active": 0,
+   "completed": 1,
+   "p95_ms": 25120,
+   "ttft_mean_ms": 0,
+   "prompt_tokens_total": 95,
+   "completion_tokens_total": 63
+  }
+ },
+ "io_load": {
+  "reads": 152288,
+  "bytes": 61511376896,
+  "mean_read_bytes": 403914.79890733346,
+  "await_ms": 47.56517913427191,
+  "members": {
+   "sda": {
+    "reads": 60665,
+    "bytes": 30757195776,
+    "mean_read_bytes": 507000.6721503338
+   },
+   "sdb": {
+    "reads": 60877,
+    "bytes": 30754181120,
+    "mean_read_bytes": 505185.5564498908
+   }
+  }
+ },
+ "io_infer": {
+  "reads": 69158,
+  "bytes": 16595881984,
+  "mean_read_bytes": 239970.53101593454,
+  "await_ms": 0.8099569102634547,
+  "members": {
+   "sda": {
+    "reads": 33670,
+    "bytes": 8298139648,
+    "mean_read_bytes": 246454.994000594
+   },
+   "sdb": {
+    "reads": 33915,
+    "bytes": 8297742336,
+    "mean_read_bytes": 244662.90243255196
+   }
+  }
+ },
+ "arm": "tiered",
+ "rep": "1",
+ "tier_gb": 16.0,
+ "cpu_layers": "12",
+ "gen_tps_wall": 2.5076870403689107
+}

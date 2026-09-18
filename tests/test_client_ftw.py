@@ -177,3 +177,30 @@ def test_routing_reported_after_the_step_scores_hits_by_faults(ftw):
         assert s.misses == 4 and s.hits == 8, s
     finally:
         server.close()
+
+
+def test_routing_after_the_fact_prefetches_for_the_next_step(ftw):
+    """With ROUTED there is no "next layer" to run ahead of; the guess is for
+    the next step. Experts routed to (but never touched) are learned, issued
+    as prefetch after the burst, and the next touch finds them present."""
+    ix, data = ftw
+    sock = _sock()
+    server = LoaderServer(ix, ram_bytes=64 * 1024 * 1024, workers=2, depth=4, verbose=False,
+                          drop_page_cache=False, floor_chunk=4096)
+    _start(server, sock)
+    try:
+        gu = ix.banks[0]["gate_up_packed"]
+        row_gu = gu.nbytes // EXPERTS
+        plan = [["map", "gu0", gu.nbytes, gu.global_off]]
+        for _ in range(3):                                   # three steps routed to experts 2 and 3, untouched
+            plan += [["routed", "gu0", 0, [2, 3]], ["sleep", 0.3]]
+        plan += [["read", "gu0", 2 * row_gu, 16], ["read", "gu0", 3 * row_gu, 16], ["sleep", 0.1]]
+        plan += [["routed", "gu0", 0, [2, 3]], ["sleep", 0.2], ["close", "gu0"]]
+        res, err = _child(sock, plan)
+        assert res["out"] == [_digest(data, gu.global_off + 2 * row_gu, 16), _digest(data, gu.global_off + 3 * row_gu, 16)], err
+        s = server.stats
+        assert s.prefetch_issued >= 2, s
+        assert s.prefetch_useful >= 1, s                     # the reads found them present; the last burst scored them hits
+        assert s.faults_expert == 0, s                       # nothing was ever faulted in
+    finally:
+        server.close()

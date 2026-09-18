@@ -1121,7 +1121,14 @@ class LoaderServer:
         if rows:
             self._sofar[layer] = rows[-1]
         if self.depth > 0:
-            self._prefetch_after(layer)
+            if after:
+                # the step already ran: guesses for the *next* step, once the
+                # burst has named every served layer
+                self.scheduler.routed(layer, self.stats.tokens)
+                if layer == self._served_layers()[-1]:
+                    self._prefetch_next_token()
+            else:
+                self._prefetch_after(layer)
 
     def _prefetch_after(self, layer: int) -> None:
         """Queue the predictor's guesses for the layers ahead, by class.
@@ -1158,6 +1165,34 @@ class LoaderServer:
                 if self.scheduler.submit(key, layer=key[0], token=token, priority=Priority.BACKGROUND_HOT):
                     self.stats.prefetch_issued += 1
 
+    def _served_layers(self) -> list[int]:
+        """The MoE layers some client has a mapping for (FreeToken: only its tiered layers)."""
+        n = len(self.mappings)
+        if getattr(self, "_served_cache", (None, None))[0] != n:
+            layers = sorted({k[0] for m in self.mappings for k in m.layout.by_key if k[0] != "floor"})
+            self._served_cache = (n, layers or [-1])
+        return self._served_cache[1]
+
+    def _prefetch_next_token(self) -> None:
+        """After a ROUTED burst: for every served layer, the predictor's guesses
+        for the next step (frequency, persistence; there is no within-token
+        context across steps), as PROBABLE_NEXT."""
+        token = self.stats.tokens
+        for layer in self._served_layers():
+            if layer < 0:
+                continue
+            pred = self.predictor.predict(layer, {})
+            for e in pred.top(self.depth):
+                key = (layer, e)
+                with self._lock:
+                    if key in self.cache or key in self._serving:
+                        continue
+                if not any(key in m.layout.by_key for m in self.mappings):
+                    continue
+                # for the next step: a job for a layer this step already routed would be stale
+                if self.scheduler.submit(key, layer=layer, token=token + 1, priority=Priority.PROBABLE_NEXT):
+                    self.stats.prefetch_issued += 1
+
     def _serve_batch(self, keys: list) -> None:
         """Materialise several predicted experts of one layer, reading adjacent
         slabs together: experts e and e+1 are neighbouring slabs in each fused
@@ -1192,17 +1227,21 @@ class LoaderServer:
         if not todo:
             return
         try:
-            first, last = m.layout.by_key[todo[0]], m.layout.by_key[todo[-1]]
-            # regions of an expert are in projection order; pair them up
-            for proj in range(len(first)):
-                a = first[proj].start & ~(PAGE - 1)
-                b = min((last[proj].end + PAGE - 1) & ~(PAGE - 1), (m.length + PAGE - 1) & ~(PAGE - 1))
-                data = self._file_bytes(m, a, b)          # one read for the whole run
-                self.stats.coalesced_reads += 1
-                self._copy_pages(m, a, b, lambda x, y, d=data, a0=a: d[x - a0:y - a0])
+            # every mapping of this client holding the run (one file for a GGUF;
+            # one buffer per bank for an FTW model), one read per projection each
+            for mm in self._mappings_with(todo[0], m.pid):
+                first, last = mm.layout.by_key[todo[0]], mm.layout.by_key[todo[-1]]
+                # regions of an expert are in projection order; pair them up
+                for proj in range(len(first)):
+                    a = first[proj].start & ~(PAGE - 1)
+                    b = min((last[proj].end + PAGE - 1) & ~(PAGE - 1), (mm.length + PAGE - 1) & ~(PAGE - 1))
+                    data = self._file_bytes(mm, a, b)          # one read for the whole run
+                    self.stats.coalesced_reads += 1
+                    self._copy_pages(mm, a, b, lambda x, y, d=data, a0=a: d[x - a0:y - a0])
             with self._lock:
                 for k in todo:
-                    self.cache.put(k, None, sum(r.end - r.start for r in m.layout.by_key[k]))
+                    self.cache.put(k, None, sum(r.end - r.start for mm in self._mappings_with(k, m.pid)
+                                                for r in mm.layout.by_key[k]))
                     self._prefetched.add(k)
                     self.stats.coalesced_experts += 1
         finally:

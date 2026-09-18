@@ -346,15 +346,23 @@ def test_consecutive_experts_are_read_together(served):
     _start(server, sock)
     try:
         files = ":".join(str(f) for f in ix.gguf.files)
-        # one read through the shim so a mapping exists; then drive the batch path
+        # one read through the shim so a mapping exists; drive the batch path
+        # while the child is still alive (a dead mapping is not served)
         r0 = ix.expert(0, 0).ranges[0]
-        _run_child(shards[0], [["read", r0.file_offset, 16], ["sleep", 0.2]], sock, files)
-        # the child has exited by now; make the mapping look alive for the copy
-        # path — copies will fail with ESRCH and be retired quietly, so measure
-        # the *reads* the coalescing issued instead
-        m = server.mappings[-1]
+        done = {}
+
+        def child():
+            done["r"] = _run_child(shards[0], [["read", r0.file_offset, 16], ["sleep", 1.5]], sock, files)
+
+        t = threading.Thread(target=child)
+        t.start()
+        for _ in range(200):
+            if server.mappings and server.stats.faults >= 1:
+                break
+            time.sleep(0.01)
         ops0 = server.backend.stats.operations
         server._serve_batch([(1, 1), (1, 2), (1, 3)])
+        t.join(10)
         assert server.backend.stats.operations - ops0 <= len(ix.expert(1, 1).ranges), \
             "a run of three consecutive experts must not cost more reads than one expert"
         assert server.stats.coalesced_reads >= 1
