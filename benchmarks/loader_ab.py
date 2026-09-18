@@ -152,6 +152,7 @@ def main() -> int:
     ap.add_argument("--loader-depth", type=int, default=0)
     ap.add_argument("--loader-workers", type=int, default=8)
     ap.add_argument("--arms", default="native,loader")
+    ap.add_argument("--first-rep", type=int, default=1, help="number the runs from here (resuming a series)")
     ap.add_argument("--port", type=int, default=8931)
     ap.add_argument("--out", type=Path, default=ROOT / "benchmarks" / "loader-out")
     ap.add_argument("--label", default=None)
@@ -167,7 +168,7 @@ def main() -> int:
     results: list[dict] = []
     sock = f"/tmp/tierinfer-{os.getpid()}.sock"
 
-    for rep in range(a.repeat):
+    for rep in range(a.first_rep - 1, a.first_rep - 1 + a.repeat):
         for arm in a.arms.split(","):
             label = f"{stem}-{arm}-{rep + 1}"
             print(f"== {label}")
