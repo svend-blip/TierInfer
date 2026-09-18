@@ -224,19 +224,26 @@ class Prefetcher:
             self.stats.late += 1
             self.stats.late_wait_seconds += waited
         data = bytes(view)
+        self._admit(key, data, flight.load.read_seconds)
         self.streamer.release(flight.load)
-        self._admit(key, data)
         return data
 
     def _exact(self, key: ExpertKey) -> bytes:
         """The path that consults nothing, counted as the stall it is."""
         self.stats.stalls += 1
         self.stats.exact_fallbacks += 1
+        t0 = time.perf_counter()
         data = self.streamer.load_now(list(self.ranges_for(key)))
-        self._admit(key, data)
+        self._admit(key, data, time.perf_counter() - t0)
         return data
 
-    def _admit(self, key: ExpertKey, data: bytes) -> None:
+    def _admit(self, key: ExpertKey, data: bytes, load_seconds: float = 0.0) -> None:
+        # The cache's value function has a reload-cost term (SCOPE 7.3,
+        # "transfer cost"); until this call existed nothing fed it and the
+        # term was a constant. The streamer's own per-load read time is the
+        # measurement.
+        if self.tracker and load_seconds > 0:
+            self.tracker.record_load(key, load_seconds)
         self.cache.put(key, data, len(data))
 
     def drop_unused(self) -> int:

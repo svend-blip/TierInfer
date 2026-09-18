@@ -359,3 +359,13 @@ def test_a_wait_timeout_falls_back_to_the_exact_path(modelfile):
         time.sleep(0.6)
         p._reap()
         assert p.orphans == 0 and s.pool.in_use == 0
+
+
+def test_the_cache_hears_what_each_expert_cost_to_load(modelfile):
+    b, s, t, p = _rig(modelfile, _Fixed([0]), depth=1)
+    with b, s:
+        p.before_layer(0, {})
+        p.on_routing(0, [0, 5])         # 0 prefetched, 5 an exact read
+        for key in ((0, 0), (0, 5)):
+            st = t.stats[key]
+            assert st.loads == 1 and st.load_seconds > 0
