@@ -85,14 +85,14 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-PRED-001 | IMPLEMENTED_UNVERIFIED | loader `_prefetch_after` uses the predictor on live routing; runtime evidence pending |
 | TI-PRED-002 | VERIFIED (replay) | prefetch issued by prediction (RO pf-d8) |
 | TI-PRED-003…006 | VERIFIED | recall@k, waste, per arm (V §5, RO) |
-| TI-PRED-007 | NOT_STARTED | trainable prerouter (item 2) |
+| TI-PRED-007 | VERIFIED (tests) / IN_PROGRESS (eval) | `prerouter.py`: per-layer linear multi-label, online SGD, `.npz` persistence; save/load survives restart (`test_prerouter.py`); recall on 480B traces pending an idle machine |
 | TI-PRED-008 | VERIFIED | bad-predictor injection, 0 mismatches (CP-8b) |
 
 ## Prefetch (A.11)
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
-| TI-PREF-001 | IN_PROGRESS | asynchronous by construction; overlap with real compute measurable only under the loader |
+| TI-PREF-001 | IN_PROGRESS | asynchronous by construction, priority classes + coalescing (`PrefetchScheduler`, `_serve_run`); the 480B A/B ran at depth 0 — depth>0 arms under the loader pending |
 | TI-PREF-002 | VERIFIED | `BufferPool`, `pool_exhausted` |
 | TI-PREF-003 | VERIFIED | in-flight/resident dedup (`Prefetcher.before_layer`, loader `_serving`) |
 | TI-PREF-004…006 | VERIFIED | useful/late/wasted split (`8d33288`; RO) |
@@ -127,22 +127,32 @@ Abbreviations: V = `benchmarks/480b/VALIDATION-480B.md`; CP-n =
 | TI-LLAMA-001 | IMPLEMENTED_UNVERIFIED | `tools/uffd/tierinfer_mmap.c` + `tierinfer.loader` (`f417eed`) |
 | TI-LLAMA-002 | VERIFIED | GLM live run: faults, copies, evictions during generation (CP-11 telemetry) |
 | TI-LLAMA-003 | ACCEPTED | native runs without the shim (CP-4, CP-5) |
-| TI-LLAMA-004 | IMPLEMENTED_UNVERIFIED | `FileLayout` per shard |
-| TI-LLAMA-005 | IN_PROGRESS | 480B loader run pending |
+| TI-LLAMA-004 | VERIFIED | `FileLayout` per shard drove every fault of the 480B runs (30 321 regions over six files; CP-12) |
+| TI-LLAMA-005 | VERIFIED | six-shard 480B served through the loader, three runs, identical tokens (CP-12) |
 | TI-LLAMA-006 | VERIFIED | loader's preads observed on nvme0n1p2 during generation (CP-11) |
 | TI-LLAMA-007 | VERIFIED | 72 % resident hits per generated token from the loader's own residency set (CP-11) |
 | TI-LLAMA-008 | BLOCKED | VRAM under llama.cpp is llama.cpp's (`-ncmoe`); a TierInfer VRAM tier needs a llama.cpp patch — documented, not attempted |
-| TI-LLAMA-009 | IMPLEMENTED_UNVERIFIED | shim `cb_eval` → ROUTE |
+| TI-LLAMA-009 | VERIFIED | shim `cb_eval` → ROUTE: 21 194 routed experts scored hit/miss on the 480B run (telemetry, CP-12) |
 | TI-LLAMA-010 | VERIFIED | 32 greedy tokens identical to native (CP-11) |
 | TI-LLAMA-011 | VERIFIED (run 1) | 480B: loader 0.622 t/s vs native 0.437, identical tokens, 36 % fewer bytes (CP-12, V §4.4); runs 2–3 pending |
-| TI-LLAMA-012 | IN_PROGRESS | repeatability: 480B runs 2–3 in flight (CP-12) |
+| TI-LLAMA-012 | VERIFIED | 480B under genuine tier pressure: 150 GB tier for 9 920 experts (~50 %), full after the prompt batch, 885 evictions, three runs 0.622/0.668/0.647 t/s (CP-12) |
 
 ## FreeToken (A.15)
 
 | ID | Status | Evidence / blocker |
 |---|---|---|
 | TI-FT-001 | IMPLEMENTED_UNVERIFIED | `adapters/freetoken.py` — configuration in, counters out (AUD 13) |
-| TI-FT-002…012 | NOT_STARTED | item 6; design pending investigation of FreeToken's loading path |
+| TI-FT-002 | IMPLEMENTED_UNVERIFIED | FreeToken patch `patches/freetoken-tierinfer-tier.patch` (`HostResidency.TIERED`, `HostBank(backing="tierinfer")`, CPU-executor `ROUTED`); runtime trace on Flash-Next pending |
+| TI-FT-003 | VERIFIED | design spec + `docs/FREETOKEN.md`: slot cache (VRAM) and pinned/locked banks (RAM) are FreeToken's; TierInfer only serves banks FreeToken would otherwise fill at load |
+| TI-FT-004 | VERIFIED | ownership explicit in code and docs: `pin()` refuses a tiered bank, GPU layers untouched, tier applies to `--moe-cpu-layers` only |
+| TI-FT-005 | IN_PROGRESS | `tierinfer serve <ftw-dir>` + `tierinfer.client` built and tested on a synthetic checkpoint; Flash-Next run pending |
+| TI-FT-006 | IN_PROGRESS | loader telemetry (faults, bytes, hit rate by faults, evictions) per tiered layer; FreeToken's `/v1/stats` beside it in `freetoken_ab.py` |
+| TI-FT-007 | IN_PROGRESS | FreeToken's slot cache stats and VRAM from `/v1/stats`; TierInfer holds no VRAM under FreeToken by design |
+| TI-FT-008 | IMPLEMENTED_UNVERIFIED | real `topk_ids` from the CPU executor's pinned log → `ROUTED` |
+| TI-FT-009 | IN_PROGRESS | separate namespaces: `loader.*` vs FreeToken's own stats in the run record |
+| TI-FT-010 | IN_PROGRESS | greedy output compared across arms by `freetoken_ab.py`; synthetic rows verified byte-exact |
+| TI-FT-011 | IN_PROGRESS | `benchmarks/freetoken_ab.py` ready; needs the GPU (480B harness running) |
+| TI-FT-012 | IN_PROGRESS | `TIERINFER_SOCK` unset → unpatched behaviour; tier absent → explicit `RuntimeError`; refused evictions counted; failure injections under FreeToken pending |
 
 ## Telemetry (A.16)
 

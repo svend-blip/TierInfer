@@ -100,6 +100,36 @@ greedy tokens are identical.
 Start the runtime without `LD_PRELOAD` (or without `TIERINFER_SOCK`). That
 is the native baseline, byte for byte the same binary.
 
+## When the runtime unmaps part of a served file
+
+llama.cpp unmaps the fragments of a file no CPU tensor lives in: the
+prefix before the first, the suffix after the last — and with experts
+offloaded to the GPU (`-ncmoe`) that suffix is gigabytes the server has
+already served at load. The shim interposes `munmap`, records the hole and
+reports it (`UNMAP <addr> <len>`); the server forgets the experts that lost
+an interior page, never prefetches them, and copies and evicts around
+holes. An `EVICT` that touches a hole, or lies outside every served region,
+is refused by the shim whatever the server says: the kernel may have given
+those addresses to a thread stack by then, and `MADV_DONTNEED` there is
+memory corruption in the host process. The first 480B run died of exactly
+that (CP-12); `tests/test_loader.py` reproduces it through the shim.
+
+## Routing after the fact
+
+`ROUTE` comes from `cb_eval` before the layer runs. A runtime that decodes
+inside a CUDA graph (FreeToken) can only read the ids back afterwards and
+sends `ROUTED`: the server learns the routing and the token boundary as
+usual, and scores a hit as "not faulted in during this token" instead of
+"resident now". See `docs/FREETOKEN.md`.
+
+## FreeToken's checkpoint
+
+`tierinfer serve <dir-with-freetoken_weight.json> --ram-gb N` serves an FTW
+checkpoint's expert banks to a runtime speaking the protocol from Python
+(`tierinfer.client`): a buffer is announced as a slice of the model's logical
+byte region (`MAP <tag> <base> <len> <logical_off>`) and one expert's rows
+live in one buffer per bank, all materialised on the first touch of any.
+
 ## Known limits
 
 - One server serves one model; several runtimes may share it.
